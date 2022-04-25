@@ -1,6 +1,6 @@
 # Meta-AF Zoo
 
-The Meta-AF Zoo contains implementations of system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer as developed in our paper.
+The Meta-AF Zoo folder contains implementations of system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer as developed in our paper.
 
 
 The zoo has sub-directories for each of these tasks: `aec`, `eq`, `wpe`, and `gsc`. Note the `sysid` folder redirects to the `aec` within near-end signal set to zero. We walk through an example usage of the `aec` modules below. All modules share the same general structure. Though, a key difference is that the `aec` and `eq` modules use the `optimizer_gru` and  `wpe`/`gsc` use `optimizer_fgru`. These two optimizer variants are identical for single-frame/channel filters but differ in how they scale past that. The fgru couple frames/channels and is significantly faster and performs better.
@@ -99,3 +99,7 @@ Follow the instructions [here](http://reverb2014.dereverberation.com/download.ht
 
 Follow the instructions [here](https://catalog.ldc.upenn.edu/LDC2017S24) to get and download the CHIME3 challenge dataset. We modified the dataset to also write out the echoic clean multi-channel speech. The dataset structure is therefore unmodifed except for the addition of `<FILE NAME>_speech.<CHANNEL #>.wav` for each file. Set the base path for `CHIME3_DATA_DIR` in `/zoo/__config__.py`.
 
+
+## License
+
+All core utility code within the `metaaf` folder is licensed via the [University of Illinois Open Source License](../metaaf/LICENSE). All code within the `zoo` folder and model weights are licensed via the [Adobe Research License](LICENSE). Copyright (c) Adobe Systems Incorporated. All rights reserved.
