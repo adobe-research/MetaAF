@@ -1,0 +1,5 @@
+AEC_DATA_DIR = "/mnt/data1/AEC/new_AEC-Challenge/"
+RIR_DATA_DIR = "/mnt/data1/AEC/RIRS_NOISES/"
+EQ_DATA_DIR = "/mnt/data1/daps/"
+REVERB_DATA_DIR = "/mnt/data1/LDC_mod/REVERB_DATA_OFFICIAL"
+CHIME3_DATA_DIR = "/mnt/data1/LDC_mod/CHiME3_norm_speech_noise"
