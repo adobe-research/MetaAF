@@ -1,15 +1,37 @@
+
+
 <div align="center">
 
 # Meta-AF: Meta-Learning for Adaptive Filters
-[Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/)
+[Jonah Casebeer](https://jmcasebeer.github.io)<sup>1*</sup>, [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/)<sup>2</sup>, and [Paris Smaragdis](https://paris.cs.illinois.edu/)<sup>1</sup>
 
+<sup>1</sup> Department of Computer Science, University of Illinois at Urbana-Champaign<br>
+<sup>2</sup> Adobe Research, Lead advisor <br>
+<sup>*</sup>Work performed while an intern at Adobe Research
 </div>
+
+[![Demo Video](https://ccrma.stanford.edu/~njb/index_files/metaaf-2022.png)](https://youtu.be/incb1QNSvW8)
+
+ <!-- START doctoc generated TOC please keep comment here to allow auto update -->
+ <!-- doctoc --maxlevel 2 README.md --> 
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**
+
+- [Meta-AF: Meta-Learning for Adaptive Filters](#meta-af-meta-learning-for-adaptive-filters)
+  - [Abstract](#abstract)
+  - [Demos](#demos)
+  - [Code](#code)
+  - [Meta-AF Zoo](#meta-af-zoo)
+  - [License](#license)
+  - [Related Works](#related-works)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Abstract
 Adaptive filtering algorithms are pervasive throughout modern society and have had a significant impact on a wide variety of domains including audio processing, biomedical sensing, astropyhysics, and many more. Adaptive filters typically operate via specialized online, iterative optimization methods but can be laborious to develop and require domain expertise. In this work, we frame the development of adaptive filters as a deep meta-learning problem and present a framework for learning online, adaptive signal processing algorithms or update rules directly from data using self-supervision. We focus on audio applications and apply our approach to system identification, acoustic echo cancellation, blind equalization, multi-channel dereverberation, and beamforming. For each application, we compare against common baselines and/or state-of-the-art methods and show we can learn high-performing adaptive filters that operate in real-time and, in most cases, significantly out perform specially developed methods for each task using a single general-purpose configuration of our method. 
 
 For more details, please see:
-"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/tbd)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022.
+"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/tbd)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. If you use ideas or code from this work, pleace cite our paper:
 
 ```BibTex
 @article{casebeer2022meta,
@@ -19,11 +41,12 @@ For more details, please see:
   url={https://arxiv.org/abs/tbd}
 }
 ```
-If you use ideas or code from this work, pleace cite our paper.
 
 
-<div align="center">
+
+<!-- <div align="center">
 </br>
+
 
 
 [**Demos**](#demos)
@@ -34,9 +57,9 @@ If you use ideas or code from this work, pleace cite our paper.
 
 
 </br>
-</div>
+</div> -->
 
- 
+
 
 
 

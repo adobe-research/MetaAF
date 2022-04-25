@@ -1,3 +1,16 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents** 
+
+- [Meta-AF Zoo](#meta-af-zoo)
+  - [Zoo Structure](#zoo-structure)
+  - [Running a Zoo Model](#running-a-zoo-model)
+  - [Installation](#installation)
+  - [Data Download](#data-download)
+  - [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Meta-AF Zoo
 
 The Meta-AF Zoo folder contains implementations of system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer as developed in our paper.
@@ -5,10 +18,6 @@ The Meta-AF Zoo folder contains implementations of system identification, acoust
 
 The zoo has sub-directories for each of these tasks: `aec`, `eq`, `wpe`, and `gsc`. Note the `sysid` folder redirects to the `aec` within near-end signal set to zero. We walk through an example usage of the `aec` modules below. All modules share the same general structure. Though, a key difference is that the `aec` and `eq` modules use the `optimizer_gru` and  `wpe`/`gsc` use `optimizer_fgru`. These two optimizer variants are identical for single-frame/channel filters but differ in how they scale past that. The fgru couple frames/channels and is significantly faster and performs better.
 
-[**Zoo Structure**](#zoo-structure)
-| [**Run A Model**](#running-a-zoo-model)
-| [**Install guide**](#installation)
-| [**Data Download**](#data-download)
 
 ## Zoo Structure
 
