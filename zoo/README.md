@@ -64,7 +64,7 @@ pip install speexdsp
 To use a pre-trained checkpoint, download and unzip the tagged release. It contains model weights for all five tasks. Below is an example of using an AEC checkpoint from the release. You can find the `--date` and `--epoch` arguments by browsing the release file structure.
 
 ```{bash}
-python aec_eval.py --name auto_rls_16_dt_nl_c --date 2022_04_08_22_47_49 --epoch 340 --ckpt_dir <path to all_tasl_ckpts>/all_tasl_ckpts/aec
+python aec_eval.py --name aec_16_dt_nl_c --date 2022_04_08_22_47_49 --epoch 340 --ckpt_dir <path to ckpts folder>/aec
 ```
 
 ## Running a Zoo Model
