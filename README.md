@@ -31,14 +31,16 @@
 Adaptive filtering algorithms are pervasive throughout modern society and have had a significant impact on a wide variety of domains including audio processing, biomedical sensing, astropyhysics, and many more. Adaptive filters typically operate via specialized online, iterative optimization methods but can be laborious to develop and require domain expertise. In this work, we frame the development of adaptive filters as a deep meta-learning problem and present a framework for learning online, adaptive signal processing algorithms or update rules directly from data using self-supervision. We focus on audio applications and apply our approach to system identification, acoustic echo cancellation, blind equalization, multi-channel dereverberation, and beamforming. For each application, we compare against common baselines and/or state-of-the-art methods and show we can learn high-performing adaptive filters that operate in real-time and, in most cases, significantly out perform specially developed methods for each task using a single general-purpose configuration of our method. 
 
 For more details, please see:
-"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/tbd)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. If you use ideas or code from this work, pleace cite our paper:
+"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/2204.11942)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. If you use ideas or code from this work, pleace cite our paper:
 
 ```BibTex
-@article{casebeer2022meta,
-  title={Meta-AF: Meta-Learning for Adaptive Filters},
-  author={Casebeer, Jonah and Bryan, Nicholas J. and Smaragdis, Paris},    
-  year={2022},
-  url={https://arxiv.org/abs/tbd}
+@article{casebeer2022metaaf,
+      title={Meta-AF: Meta-Learning for Adaptive Filters}, 
+      author={Jonah Casebeer and Nicholas J. Bryan and Paris Smaragdis},
+      year={2022},
+      eprint={2204.11942},
+      archivePrefix={arXiv},
+      primaryClass={cs.SD}
 }
 ```
 
