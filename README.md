@@ -67,7 +67,7 @@ For more details, please see:
 
 ## Demos
 
-For audio demonstrations of the work and `metaaf` package in action, please check out our [demo website](https://jmcasebeer.github.io/projects/metaaf/). You'll be able to find demos for the five core adaptive filtering problems.
+For audio demonstrations of the work and `metaaf` package in action, please check out our [demo website](https://jmcasebeer.github.io/projects/metaaf). You'll be able to find demos for the five core adaptive filtering problems.
 
 ## Code
 
