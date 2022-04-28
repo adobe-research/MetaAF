@@ -79,7 +79,9 @@ The `metaaf` package is relatively small, being limited to a dozen files which e
 
 To install the `metaaf` python package, you will need a working JAX install. You can set one up by following the official directions [here](https://github.com/google/jax#installation). Below is an example of the commands we use to setup a new conda environment called `metaenv` in which we install `metaaf` and any dependencies.
 
+#### GPU Setup
 ```{bash}
+### GPU
 # Install all the cuda and cudnn prerequisites
 conda create -yn metaenv python=3.7 &&
 conda install -yn metaenv cudatoolkit=11.1.1 -c pytorch -c conda-forge &&
@@ -90,11 +92,29 @@ conda activate metaenv
 
 # Actually install jax
 # You may need to change the cuda/cudnn version numbers depending on your machine
-pip install jax[cuda11_cudnn82] -f https://storage.googleapis.com/jax-releases/jax_releases.html  
+pip install jax[cuda11_cudnn82]==0.3.7 -f https://storage.googleapis.com/jax-releases/jax_releases.html  
 
 # Install Haiku
-pip install git+https://github.com/deepmind/dm-haiku
+pip install git+https://github.com/deepmind/dm-haiku@v0.0.6
 ```
+
+#### CPU Setup
+```{bash}
+### CPU. x86 only
+conda create -yn metaenv python=3.7 && 
+conda install -yn metaenv pytorch torchvision torchaudio -c pytorch && 
+conda install -yn metaenv pytorch cpuonly -c pytorch -y
+conda activate metaenv
+
+# Actually install jax
+# You may need to change the cuda/cudnn version numbers depending on your machine
+pip install --upgrade pip
+pip install --upgrade "jax[cpu]"==0.3.7
+
+# Install Haiku
+pip install git+https://github.com/deepmind/dm-haiku@v0.0.6
+```
+
 
 Finally, with the prerequisites done, you can install `metaaf` by cloning the repo, moving into the base directory, and running `pip install -e ./`. This `pip install` adds the remaining dependencies. To run the demo notebook, you also need to:
 
