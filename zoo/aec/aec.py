@@ -466,7 +466,7 @@ if __name__ == "__main__":
     callbacks = [
         CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts"),
         AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./taslp_outputs"),
-        WandBCallback(project="taslp-aec", name=kwargs["name"], entity="autodsp"),
+        WandBCallback(project="meta-aec", name=kwargs["name"], entity=None),
     ]
 
     if kwargs["extra_signals"] == "none":

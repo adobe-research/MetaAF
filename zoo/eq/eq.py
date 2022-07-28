@@ -261,7 +261,7 @@ if __name__ == "__main__":
     callbacks = [
         CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts"),
         AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./taslp_outputs"),
-        WandBCallback(project="taslp-eq", name=kwargs["name"], entity="autodsp"),
+        WandBCallback(project="meta-eq", name=kwargs["name"], entity=None),
     ]
 
     system = MetaAFTrainer(
