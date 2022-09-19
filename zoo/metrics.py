@@ -1,6 +1,4 @@
 import numpy as np
-import pystoi
-from pysepm import fwSNRseg
 
 EPS = 1e-10
 
@@ -20,6 +18,13 @@ def get_mean_metrics(metrics):
 
 
 def stoi(out_sig, target_sig, fs=16000):
+    try:
+        import pystoi
+    except ImportError:
+        raise ImportError(
+            "You must install the pystoi pacakge to run evaluation with the the STOI metric."
+        )
+
     min_len = min(len(out_sig), len(target_sig))
     out_sig, target_sig = out_sig[:min_len], target_sig[:min_len]
 
@@ -27,6 +32,13 @@ def stoi(out_sig, target_sig, fs=16000):
 
 
 def fwssnr(out_sig, target_sig, fs=16000):
+    try:
+        from pysepm import fwSNRseg
+    except ImportError:
+        raise ImportError(
+            "You must install the pysepm pacakge to run evaluation with the fwSNRseg metric."
+        )
+
     min_len = min(len(out_sig), len(target_sig))
     out_sig, target_sig = out_sig[:min_len], target_sig[:min_len]
 
@@ -117,7 +129,19 @@ def sisdr(out_sig, target_sig):
     t_proj = (ot + EPS) / (tt + EPS) * target_sig
     res = out_sig - t_proj
 
-    return 10 * np.log10(((t_proj ** 2).mean() + EPS) / ((res ** 2).mean() + EPS) + EPS)
+    return 10 * np.log10(((t_proj**2).mean() + EPS) / ((res**2).mean() + EPS) + EPS)
+
+
+def bss_eval_metrics(out_sig, target_sig, in_sig):
+    import mir_eval
+
+    ref_sources = np.array([target_sig, in_sig - target_sig])
+    est_sources = np.array([out_sig, in_sig - out_sig])
+
+    (sdr, sir, sar, perm) = mir_eval.separation.bss_eval_sources(
+        ref_sources, est_sources, compute_permutation=False
+    )
+    return sdr[0], sir[0], sar[0]
 
 
 def srr_stft(out_sig, in_sig, segmental=False, window_size=1024, hop_size=512):

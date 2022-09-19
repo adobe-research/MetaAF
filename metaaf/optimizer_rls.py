@@ -27,8 +27,17 @@ def default_args():
 
 def get_tuning_options(**kwargs):
     return {
-        "init_scale": [1e-4, 1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3, 1e4],
-        "forget_factor": [0.7, 0.8, 0.9, 0.98, 0.99, 0.999, 0.9999, 0.99999],
+        "init_scale": [1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3],
+        "forget_factor": [
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            0.99,
+            0.999,
+            0.9999,
+        ],
     }
 
 
@@ -39,7 +48,10 @@ def _fwd(x, **kwargs):
 
 def init_optimizer(filter_p, batch_data, optimizer_dict, key):
     # only needs to init the step size
-    return {"forget_factor": 0.999, "init_scale": 0.01}
+    return {
+        "forget_factor": 0.999,
+        "init_scale": 0.01,
+    }
 
 
 def freq_flatten(x):
@@ -66,7 +78,6 @@ def update_kalman_gain(u, P, forget_factor):
     # dont divide by zero
     denom = forget_factor + u_P_u
     denom = jnp.maximum(denom, 1e-4 * jnp.max(denom))
-
     return P_u / denom[:, None]
 
 
@@ -111,6 +122,7 @@ def rls_step(P, u, e, forget_factor, normalize):
 def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs):
     forget_factor = optimizer_p["forget_factor"]
     init_scale = optimizer_p["init_scale"]
+
     normalize = optimizer_kwargs["nrls"]
     optimize_conjugate = optimizer_kwargs["optimize_conjugate"]
 

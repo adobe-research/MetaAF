@@ -28,11 +28,19 @@ def get_all_metrics(clean, enhanced, mix, fs=16000):
     res["stoi"] = metrics.stoi(enhanced, clean, fs=fs)
     res["sisdr"] = metrics.sisdr(enhanced, clean)
     res["snr"] = metrics.snr(mix, enhanced)
+    sdr, sir, sar = metrics.bss_eval_metrics(enhanced, clean, mix)
+    res["sdr"] = sdr
+    res["sir"] = sir
+    res["sar"] = sar
 
     in_res = {}
     in_res["stoi"] = metrics.stoi(mix, clean, fs=fs)
     in_res["sisdr"] = metrics.sisdr(mix, clean)
     in_res["snr"] = metrics.snr(mix, mix)
+    # sdr, sir, sar = metrics.bss_eval_metrics(mix, clean, mix)
+    in_res["sdr"] = 0  # sdr
+    in_res["sir"] = 0  # sir
+    in_res["sar"] = 0  # sar
 
     delta_res = {f"delta_{k}": res[k] - in_res[k] for k in in_res}
     in_res = {f"in_{k}": in_res[k] for k in in_res}
@@ -42,7 +50,7 @@ def get_all_metrics(clean, enhanced, mix, fs=16000):
     return res
 
 
-def get_system_ckpt(ckpt_dir, e, model_type="egru", verbose=True):
+def get_system_ckpt(ckpt_dir, e, verbose=True, noop=False):
     ckpt_loc = os.path.join(ckpt_dir, f"epoch_{e}.pkl")
     with open(ckpt_loc, "rb") as f:
         outer_learnable = pickle.load(f)
@@ -65,39 +73,47 @@ def get_system_ckpt(ckpt_dir, e, model_type="egru", verbose=True):
 
     outer_train_loss = gsc.meta_log_mse_loss
     # switch case to find the right optimizer functions
-    if model_type == "fgru":
+    if kwargs["optimizer"] == "egru":
+        optimizer_kwargs = gru.ElementWiseGRU.grab_args(kwargs)
+        _optimizer_fwd = gru._elementwise_gru_fwd
+        init_optimizer = gru.init_optimizer_all_data
+        make_mapped_optmizer = gru.make_mapped_optmizer_all_data
+
+    elif kwargs["optimizer"] == "fgru":
         optimizer_kwargs = fgru.TimeChanCoupledGRU.grab_args(kwargs)
         _optimizer_fwd = fgru._timechancoupled_gru_fwd
         init_optimizer = fgru.init_optimizer_all_data
         make_mapped_optmizer = fgru.make_mapped_optmizer_all_data
 
-    elif model_type == "lms":
+    elif kwargs["optimizer"] == "lms":
         optimizer_kwargs = lms.grab_args(kwargs)
         _optimizer_fwd = lms._fwd
         init_optimizer = lms.init_optimizer
         make_mapped_optmizer = lms.make_mapped_optmizer
 
-    elif model_type == "nlms":
+    elif kwargs["optimizer"] == "nlms":
         optimizer_kwargs = nlms.grab_args(kwargs)
         _optimizer_fwd = nlms._fwd
         init_optimizer = nlms.init_optimizer
         make_mapped_optmizer = nlms.make_mapped_optmizer
 
-    elif model_type == "rms":
+    elif kwargs["optimizer"] == "rms":
         optimizer_kwargs = rms.grab_args(kwargs)
         _optimizer_fwd = rms._fwd
         init_optimizer = rms.init_optimizer
         make_mapped_optmizer = rms.make_mapped_optmizer
 
-    elif model_type == "rls":
+    elif kwargs["optimizer"] == "rls":
         optimizer_kwargs = rls.grab_args(kwargs)
         _optimizer_fwd = rls._fwd
         init_optimizer = rls.init_optimizer
         make_mapped_optmizer = rls.make_mapped_optmizer
 
     system = MetaAFTrainer(
-        _filter_fwd=gsc._GSCOLA_fwd,
-        filter_kwargs=gsc.GSCOLA.grab_args(kwargs),
+        _filter_fwd=gsc._NOOPGSCOLA_fwd if noop else gsc._GSCOLA_fwd,
+        filter_kwargs=gsc.NOOPGSCOLA.grab_args(kwargs)
+        if noop
+        else gsc.GSCOLA.grab_args(kwargs),
         filter_loss=gsc.gsc_loss,
         optimizer_kwargs=optimizer_kwargs,
         train_loader=train_loader,
@@ -120,10 +136,10 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--date", type=str, default="")
     parser.add_argument("--epoch", type=int, default=0)
-    parser.add_argument("--model_type", type=str, default="fgru")
-    parser.add_argument("--ckpt_dir", type=str, default="./taslp_ckpts")
+    parser.add_argument("--ckpt_dir", type=str, default="./meta_ckpts")
+    parser.add_argument("--static_speech_interfere", action="store_true")
 
-    parser.add_argument("--out_dir", type=str, default="./taslp_outputs")
+    parser.add_argument("--out_dir", type=str, default="./meta_outputs")
     parser.add_argument("--save_outputs", action="store_true")
     parser.add_argument("--save_metrics", action="store_true")
 
@@ -131,13 +147,13 @@ if __name__ == "__main__":
     pprint.pprint(eval_kwargs)
 
     # build the checkpoint path
-    ckpt_loc = os.path.join(eval_kwargs["ckpt_dir"], eval_kwargs["name"], eval_kwargs["date"])
+    ckpt_loc = os.path.join(
+        eval_kwargs["ckpt_dir"], eval_kwargs["name"], eval_kwargs["date"]
+    )
     epoch = int(eval_kwargs["epoch"])
 
     # load the checkpoint and kwargs file
-    system, kwargs, outer_learnable = get_system_ckpt(
-        ckpt_loc, epoch, model_type=eval_kwargs["model_type"]
-    )
+    system, kwargs, outer_learnable = get_system_ckpt(ckpt_loc, epoch)
     fit_infer = system.make_fit_infer(outer_learnable=outer_learnable)
     fs = 16000
 
@@ -153,18 +169,13 @@ if __name__ == "__main__":
         os.makedirs(out_dir, exist_ok=True)
 
     # evaluate the model
-    static_speech_interfere = (
-        kwargs["static_speech_interfere"]
-        if "static_speech_interfere" in kwargs
-        else False
-    )
     test_dataset = gsc.Chime3Dataset(
         mode="test",
         n_mics=kwargs["n_in_chan"],
-        static_speech_interfere=static_speech_interfere,
+        static_speech_interfere=eval_kwargs["static_speech_interfere"],
     )
     all_metrics = []
-    for i in tqdm.tqdm(range(len(test_dataset))):
+    for i in tqdm.tqdm(range(0, len(test_dataset))):
         data = test_dataset[i]
         m, s = data["signals"]["m"], data["signals"]["s"]
 
@@ -192,6 +203,9 @@ if __name__ == "__main__":
 
     # if saving outputs save all the metrics
     if eval_kwargs["save_metrics"]:
-        metrics_pkl = os.path.join(out_dir, "metrics.pkl")
+        static_speech_interfere = eval_kwargs["static_speech_interfere"]
+        metrics_pkl = os.path.join(
+            out_dir, f"metrics_directional_{static_speech_interfere}.pkl"
+        )
         with open(metrics_pkl, "wb") as f:
             pickle.dump(all_metrics, f)

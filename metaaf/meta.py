@@ -322,6 +322,7 @@ class MetaAFTrainer:
         meta_opt=complex_adam,
         meta_opt_kwargs={"step_size": 1e-4, "b1": 0.99},
         meta_opt_preprocess=Partial(clip_grads, max_norm=10, eps=1e-9),
+        outer_learnable=None,
         key=None,
     ):
         """The actualy train function. Manages the whole metr-training procedure
@@ -338,6 +339,7 @@ class MetaAFTrainer:
             meta_opt (_type_, optional): The meta-optimizer. Defaults to optimizers.adam.
             meta_opt_kwargs (dict, optional): Any meta-optimizer kwargs. Defaults to {"step_size": 1e-4, "b1": 0.99}.
             meta_opt_preprocess (_type_, optional): A preprocessor for the meta-grad, like clipping. Defaults to Partial(clip_grads, max_norm=10, eps=1e-9).
+            outer_learnable (dict, optional): Initial training params for any sort of transfer learning.
             key (_type_, optional): JAX PRNGKey. Defaults to None.
 
         Returns:
@@ -359,7 +361,11 @@ class MetaAFTrainer:
 
         # make the outer learnable model
         key, subkey = jax.random.split(key)
-        self.outer_learnable = self.init_outer_learnable(subkey)
+        self.outer_learnable = (
+            self.init_outer_learnable(subkey)
+            if outer_learnable is None
+            else outer_learnable
+        )
 
         # print the parameter count
         n_params = np.sum(
@@ -566,14 +572,7 @@ class MetaAFTrainer:
         return np.array(train_loop_losses), meta_opt_s
 
     def train_step(
-        self,
-        meta_opt_s,
-        filter_p,
-        filter_s,
-        preprocess_s,
-        postprocess_s,
-        batch,
-        key,
+        self, meta_opt_s, filter_p, filter_s, preprocess_s, postprocess_s, batch, key,
     ):
         if self.get_filter_featues is None:
             self.get_filter_featues = self.make_get_filter_featues(
@@ -645,10 +644,7 @@ class MetaAFTrainer:
         for (batch_idx, batch) in enumerate(self.val_loader):
             key, subkey = jax.random.split(key)
             out, aux = self.infer(
-                batch,
-                outer_learnable=outer_learnable,
-                fit_infer=fit_infer,
-                key=subkey,
+                batch, outer_learnable=outer_learnable, fit_infer=fit_infer, key=subkey,
             )
 
             # call backs on end of a val batch
@@ -695,10 +691,7 @@ class MetaAFTrainer:
         for (batch_idx, batch) in enumerate(self.test_loader):
             key, subkey = jax.random.split(key)
             out, aux = self.infer(
-                batch,
-                outer_learnable=outer_learnable,
-                fit_infer=fit_infer,
-                key=subkey,
+                batch, outer_learnable=outer_learnable, fit_infer=fit_infer, key=subkey,
             )
             # call backs on end of a test batch
             [

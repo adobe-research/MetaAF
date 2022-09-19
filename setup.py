@@ -9,5 +9,5 @@ setup(
     url="https://github.com/adobe-research/metaaf",
     packages=["metaaf"],
     license="University of Illinois Open Source License and Adobe Research License",
-    install_requires=["tqdm==4.62.*", "wandb==0.12.*", "SoundFile==0.10.*"],
+    install_requires=["tqdm==4.62.*", "wandb==0.13.*", "SoundFile==0.10.*"],
 )

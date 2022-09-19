@@ -103,7 +103,7 @@ def segmental_system_snr(system, outer_learnable, d_input, i, test_dataset, kwar
     return np.array(system_snrs)
 
 
-def get_system_ckpt(ckpt_dir, e, model_type="egru", verbose=True):
+def get_system_ckpt(ckpt_dir, e, verbose=True, noop=False):
     ckpt_loc = os.path.join(ckpt_dir, f"epoch_{e}.pkl")
     with open(ckpt_loc, "rb") as f:
         outer_learnable = pickle.load(f)
@@ -121,39 +121,41 @@ def get_system_ckpt(ckpt_dir, e, model_type="egru", verbose=True):
 
     outer_train_loss = eq.meta_log_mse_loss
     # switch case to find the right optimizer functions
-    if model_type == "egru":
+    if kwargs["optimizer"] == "gru":
         optimizer_kwargs = ElementWiseGRU.grab_args(kwargs)
         _optimizer_fwd = optimizer_gru._elementwise_gru_fwd
         init_optimizer = optimizer_gru.init_optimizer_all_data
         make_mapped_optmizer = optimizer_gru.make_mapped_optmizer_all_data
 
-    elif model_type == "lms":
+    elif kwargs["optimizer"] == "lms":
         optimizer_kwargs = lms.grab_args(kwargs)
         _optimizer_fwd = lms._fwd
         init_optimizer = lms.init_optimizer
         make_mapped_optmizer = lms.make_mapped_optmizer
 
-    elif model_type == "nlms":
+    elif kwargs["optimizer"] == "nlms":
         optimizer_kwargs = nlms.grab_args(kwargs)
         _optimizer_fwd = nlms._fwd
         init_optimizer = nlms.init_optimizer
         make_mapped_optmizer = nlms.make_mapped_optmizer
 
-    elif model_type == "rms":
+    elif kwargs["optimizer"] == "rms":
         optimizer_kwargs = rms.grab_args(kwargs)
         _optimizer_fwd = rms._fwd
         init_optimizer = rms.init_optimizer
         make_mapped_optmizer = rms.make_mapped_optmizer
 
-    elif model_type == "rls":
+    elif kwargs["optimizer"] == "rls":
         optimizer_kwargs = rls.grab_args(kwargs)
         _optimizer_fwd = rls._fwd
         init_optimizer = rls.init_optimizer
         make_mapped_optmizer = rls.make_mapped_optmizer
 
     system = MetaAFTrainer(
-        _filter_fwd=eq._EQOLS_fwd,
-        filter_kwargs=eq.EQOLS.grab_args(kwargs),
+        _filter_fwd=eq._NOOPEQOLS_fwd if noop else eq._EQOLS_fwd,
+        filter_kwargs=eq.NOOPEQOLS.grab_args(kwargs)
+        if noop
+        else eq.EQOLS.grab_args(kwargs),
         filter_loss=eq.eq_loss,
         optimizer_kwargs=optimizer_kwargs,
         train_loader=train_loader,
@@ -177,10 +179,9 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--date", type=str, default="")
     parser.add_argument("--epoch", type=int, default=0)
-    parser.add_argument("--model_type", type=str, default="egru")
-    parser.add_argument("--ckpt_dir", type=str, default="./taslp_ckpts")
+    parser.add_argument("--ckpt_dir", type=str, default="./meta_ckpts")
 
-    parser.add_argument("--out_dir", type=str, default="./taslp_outputs")
+    parser.add_argument("--out_dir", type=str, default="./meta_outputs")
     parser.add_argument("--save_outputs", action="store_true")
     parser.add_argument("--save_metrics", action="store_true")
 
@@ -188,13 +189,13 @@ if __name__ == "__main__":
     pprint.pprint(eval_kwargs)
 
     # build the checkpoint path
-    ckpt_loc = os.path.join(eval_kwargs["ckpt_dir"], eval_kwargs["name"], eval_kwargs["date"])
+    ckpt_loc = os.path.join(
+        eval_kwargs["ckpt_dir"], eval_kwargs["name"], eval_kwargs["date"]
+    )
     epoch = int(eval_kwargs["epoch"])
 
     # load the checkpoint and kwargs file
-    system, kwargs, outer_learnable = get_system_ckpt(
-        ckpt_loc, epoch, model_type=eval_kwargs["model_type"]
-    )
+    system, kwargs, outer_learnable = get_system_ckpt(ckpt_loc, epoch)
     fit_infer = system.make_fit_infer(outer_learnable=outer_learnable)
     fs = 16000
 

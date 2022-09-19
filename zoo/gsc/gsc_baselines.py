@@ -4,6 +4,7 @@ import itertools
 import tqdm
 
 import jax
+from jax.tree_util import Partial
 
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
@@ -17,7 +18,13 @@ import zoo.gsc.gsc as gsc
 
 """
 Sample command to tune a baseline:
-python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --cov_init identity --cov_update oracle --exp_avg .9 --steer_method eigh --cov_update_regularizer 0.01 --name debug_gsc_baseline --optimizer nlms
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_rls_combo_default_aa --optimizer rls --combo_dataset --antialias
+
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_nlms_combo_default_aa --optimizer nlms --combo_dataset --antialias
+
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_rms_combo_default_aa --optimizer rms --combo_dataset --antialias
+
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_lms_combo_default_aa --optimizer lms --combo_dataset --antialias
 """
 if __name__ == "__main__":
     import pprint
@@ -41,6 +48,7 @@ if __name__ == "__main__":
 
     # get everything else
     parser.add_argument("--name", type=str, default="")
+    parser.add_argument("--combo_dataset", action="store_true")
     parser.add_argument("--static_speech_interfere", action="store_true")
 
     parser = gsc.GSCOLA.add_args(parser)
@@ -48,22 +56,28 @@ if __name__ == "__main__":
     kwargs = vars(parser.parse_args())
     pprint.pprint(kwargs)
 
+    gsc_datset = (
+        gsc.Chime3ComboDataset
+        if kwargs["combo_dataset"]
+        else Partial(
+            gsc.Chime3Dataset, static_speech_interfere=kwargs["static_speech_interfere"]
+        )
+    )
+
     val_loader = NumpyLoader(
-        gsc.Chime3Dataset(
+        gsc_datset(
             mode="val",
             n_mics=kwargs["n_in_chan"],
             signal_len=128000,
-            static_speech_interfere=kwargs["static_speech_interfere"],
-            max_n_files=128,
+            max_n_files=160,
         ),
         batch_size=kwargs["batch_size"],
         num_workers=4,
     )
     test_loader = NumpyLoader(
-        gsc.Chime3Dataset(
+        gsc_datset(
             mode="test",
             n_mics=kwargs["n_in_chan"],
-            static_speech_interfere=kwargs["static_speech_interfere"],
             signal_len=128000,
         ),
         batch_size=kwargs["batch_size"],
@@ -106,9 +120,9 @@ if __name__ == "__main__":
         outer_learned["optimizer_p"].update(config_dict)
         val_loss = system.val_loop(outer_learnable=outer_learned)
 
-        median_val_scores.append(np.median(val_loss))
+        median_val_scores.append(np.nanmean(val_loss))
 
-        if np.median(val_loss) < np.median(best_val_scores):
+        if np.nanmean(val_loss) < np.nanmean(best_val_scores):
             best_config = config_dict
             best_val_scores = val_loss
 
@@ -117,7 +131,7 @@ if __name__ == "__main__":
 
     # run test and save the best parameters
     outer_learned["optimizer_p"].update(best_config)
-    print(f"BEST -- CFG: {best_config} -- {np.median(best_val_scores)} --")
+    print(f"BEST -- CFG: {best_config} -- {np.nanmean(best_val_scores)} --")
 
     test_loss = system.test_loop(outer_learnable=outer_learned)
 
@@ -128,7 +142,7 @@ if __name__ == "__main__":
     )
 
     # save this model in the autodsp format
-    ckpt_cb = CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./ckpts")
+    ckpt_cb = CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./meta_ckpts")
     ckpt_cb.on_init(
         system.inner_fixed, system.outer_fixed, system.kwargs, outer_learned
     )

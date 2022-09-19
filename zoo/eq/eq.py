@@ -126,7 +126,7 @@ class EQDAPSDataset(Dataset):
             delta_torch = torch.zeros(512, 1)
             delta_torch[0] = 1
 
-            h = torchaudio.sox_effects.apply_effects_tensor(
+            h = sox_effects.apply_effects_tensor(
                 delta_torch, 16000, self.data[idx]["effects"], channels_first=False
             )[0].numpy()
             d = np.array(d_torch[:, 0])
@@ -150,6 +150,14 @@ class EQOLS(OverlapSave, hk.Module):
         self.analysis_window = jnp.ones(self.window_size)
         self.constraint = constraint
 
+    def antialias(self, x):
+        x_td = (
+            self.ifft(x, axis=1)
+            .at[:, : self.window_size + self.pad_size - self.hop_size, :]
+            .set(0.0)
+        )
+        return self.fft(x_td, axis=1)
+
     def __ols_call__(self, u, d, metadata):
         w = hk.get_parameter(
             "w",
@@ -160,22 +168,23 @@ class EQOLS(OverlapSave, hk.Module):
 
         if self.constraint == "antialias":
             # time domain antialias
-            w_td = (
-                self.ifft(w, axis=1)
-                .at[:, (self.window_size + self.pad_size) // 2 :, :]
-                .set(0.0)
-            )
+            w_td = self.ifft(w, axis=1).at[:, -self.hop_size :, :].set(0.0)
             w = self.fft(w_td, axis=1)
 
-        d_hat = (w * u).sum(0)
-        e = d[-1] - d_hat
+        out = (w * u).sum(0)
+        e = d[-1] - out
+
+        y = self.antialias(out[None])
+        e = self.antialias(e[None])
 
         return {
-            "out": d_hat,
-            "u": u[-1, None],
-            "d": d,
-            "e": e[None],
-            "loss": jnp.vdot(e, e).real / e.size,
+            "out": out,
+            "u": u,
+            "d": d[-1, None],
+            "e": e,
+            "y": y,
+            "grad": jnp.conj(u) * e,
+            "loss": jnp.vdot(e, e).real / 2,
         }
 
     @staticmethod
@@ -198,22 +207,61 @@ def _EQOLS_fwd(u, d, metadata=None, init_data=None, **kwargs):
     return gen_filter(u=u, d=d)
 
 
+class NOOPEQOLS(OverlapSave, hk.Module):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __ols_call__(self, u, d):
+        pass
+
+    def __call__(self, u, d):
+        shape = [self.n_frames, self.n_freq, self.n_in_chan]
+        w = hk.get_parameter("w", shape, init=metaaf.complex_utils.complex_zeros)
+        return {
+            "out": u[-1, None],
+            "u": w,
+            "d": w[-1, None],
+            "e": w[-1, None],
+            "y": w[-1, None],
+            "grad": w,
+            "loss": 0.0,
+        }
+
+    @staticmethod
+    def add_args(parent_parser):
+        return super(NOOPEQOLS, NOOPEQOLS).add_args(parent_parser)
+
+    @staticmethod
+    def grab_args(kwargs):
+        return super(NOOPEQOLS, NOOPEQOLS).grab_args(kwargs)
+
+
+def _NOOPEQOLS_fwd(u, d, metadata=None, init_data=None, **kwargs):
+    gen_filter = NOOPEQOLS(**kwargs)
+    return gen_filter(u=u, d=d)
+
+
 def eq_loss(out, data_samples, metadata):
     return out["loss"]
 
 
 def meta_log_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.concatenate(outputs["out"], 0)
     EPS = 1e-8
-    return jnp.log(jnp.mean(jnp.abs(outputs - data_samples["d"]) ** 2) + EPS)
+    return jnp.log(jnp.mean(jnp.abs(out - data_samples["d"]) ** 2) + EPS)
 
 
 def neg_snr_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.reshape(
+        outputs["out"],
+        (outputs["out"].shape[0], -1, outputs["out"].shape[-1]),
+    )
     snr_scores = []
-    for i in range(len(outputs)):
-        min_len = min(outputs.shape[1], data_samples["u"].shape[1])
+    for i in range(len(out)):
+        min_len = min(out.shape[1], data_samples["u"].shape[1])
 
         d = data_samples["d"][i, :min_len, 0]
-        d_hat = outputs[i, :min_len, 0]
+        d_hat = out[i, :min_len, 0]
 
         snr = metrics.snr(np.array(d_hat), np.array(d))
         snr_scores.append(snr)
@@ -222,47 +270,51 @@ def neg_snr_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
 
 """
 Aliased
-python eq.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_eq_none_16_c --unroll 16 --constraint none
+python eq.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_eq_none_16_c --unroll 16 --constraint none --debug
 
 Anti-Aliased
-python eq.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_eq_antialias_16_c --unroll 16 --constraint antialias
+python eq.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_eq_antialias_16_c --unroll 16 --constraint antialias --debug
 """
 if __name__ == "__main__":
     import pprint
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default="")
+    parser.add_argument("--debug", action="store_true")
 
     parser = EQOLS.add_args(parser)
     parser = ElementWiseGRU.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
     kwargs = vars(parser.parse_args())
+    kwargs["optimizer"] = "gru"
     pprint.pprint(kwargs)
 
     # make the dataloders
     train_loader = NumpyLoader(
-        EQDAPSDataset(mode="train", is_fir=False, n_signals=16384),
+        EQDAPSDataset(mode="train", n_signals=16384),
         batch_size=kwargs["batch_size"],
         shuffle=True,
         num_workers=8,
     )
     val_loader = NumpyLoader(
-        EQDAPSDataset(mode="val", is_fir=False, n_signals=2048),
+        EQDAPSDataset(mode="val", n_signals=2048),
         batch_size=kwargs["batch_size"],
-        num_workers=4,
+        num_workers=2,
     )
     test_loader = NumpyLoader(
-        EQDAPSDataset(mode="test", is_fir=True, n_signals=2048),
+        EQDAPSDataset(mode="test", n_signals=2048),
         batch_size=kwargs["batch_size"],
         num_workers=0,
     )
 
     # make the callbacks
-    callbacks = [
-        CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts"),
-        AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./taslp_outputs"),
-        WandBCallback(project="meta-eq", name=kwargs["name"], entity=None),
-    ]
+    callbacks = []
+    if not kwargs["debug"]:
+        callbacks = [
+            CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./meta_ckpts"),
+            AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./meta_outputs"),
+            WandBCallback(project="meta-eq", name=kwargs["name"], entity=None),
+        ]
 
     system = MetaAFTrainer(
         _filter_fwd=_EQOLS_fwd,

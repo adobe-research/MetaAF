@@ -40,15 +40,15 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
 
     def update(i, features, jax_state):
         filter_p, avg_sq_grad = jax_state
-        g = jnp.conj(features.filter_features)
+        g = features.cur_outputs["grad"]
 
         gamma = optimizer_p["gamma"]
         eps = optimizer_p["eps"]
 
         avg_sq_grad = avg_sq_grad * gamma + jnp.square(jnp.abs(g)) * (1.0 - gamma)
-        filter_p = filter_p - optimizer_p["step_size"] * g / jnp.sqrt(avg_sq_grad + eps)
+        update = optimizer_p["step_size"] * g / jnp.sqrt(avg_sq_grad + eps)
 
-        return (filter_p, avg_sq_grad)
+        return (filter_p + update, avg_sq_grad)
 
     def get_params(jax_state):
         # state was (parameters, state)

@@ -18,7 +18,7 @@ class BufferedFilterMixin(metaclass=ABCMeta):
         n_frames,
         n_in_chan,
         n_out_chan,
-        is_real=False,
+        is_real=True,
         name="Filter",
     ):
         """This is the buffered filter base-class that manages all buffering and online processing. It is overridden by the OLA and OLA classes.
@@ -30,7 +30,7 @@ class BufferedFilterMixin(metaclass=ABCMeta):
             n_frames (_type_): Int number of delayed frames to track
             n_in_chan (_type_): Int number of input channels
             n_out_chan (_type_): Int number of output channels
-            is_real (bool, optional): If the input signal is real and shold use rfft/irfft. Defaults to False.
+            is_real (bool, optional): If the input signal is real and shold use rfft/irfft. Defaults to True.
             name (str, optional): Possible name of filter. Defaults to "Filter".
         """
         super().__init__(name=name)
@@ -193,11 +193,7 @@ class OverlapSave(BufferedFilterMixin, hk.Module):
         w = hk.get_parameter(name, shape, init=self.w_init, dtype=jnp.complex64)
 
         # time domain antialias
-        w_td = (
-            self.ifft(w, axis=1)
-            .at[:, (self.window_size + self.pad_size) // 2 :, :]
-            .set(0.0)
-        )
+        w_td = self.ifft(w, axis=1).at[:, -self.hop_size :, :].set(0.0)
         return self.fft(w_td, axis=1)
 
     def __call__(self, metadata=None, **kwargs):
@@ -249,7 +245,7 @@ class OverlapAdd(BufferedFilterMixin, hk.Module):
         slide = (N - 1) // self.hop_size
 
         # init as full overlap
-        analysis_window_sq = analysis_window ** 2
+        analysis_window_sq = analysis_window**2
         denom = analysis_window_sq
 
         # add in the shifts
@@ -307,7 +303,7 @@ class OverlapAdd(BufferedFilterMixin, hk.Module):
 
 
 def make_inner_grad(filter, inner_fixed, frame_loss):
-    """Functio to make the feature extractor for the filter when using grad.
+    """Function to make the feature extractor for the filter when using grad.
 
     Args:
         filter (_type_): The filter from Haiku

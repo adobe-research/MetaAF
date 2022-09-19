@@ -17,49 +17,25 @@ from metaaf.callbacks import CheckpointCallback
 import zoo.aec.aec as aec
 
 """
-Single Talk/SysID
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_st_lms --optimizer lms --random_roll
+ID
+python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name id_lms --optimizer lms --random_roll --dataset linear --true_rir_len 1024
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_st_rms --optimizer rms --random_roll
+python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name id_rms --optimizer rms --random_roll --dataset linear --true_rir_len 1024
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_st_nlms --optimizer nlms --random_roll
+python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name id_nlms --optimizer nlms --random_roll --dataset linear --true_rir_len 1024
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_st_rls --optimizer rls --optimize_conjugate --random_roll
+python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name id_rls --optimizer rls --optimize_conjugate --random_roll --dataset linear --true_rir_len 1024
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_st_kf --optimizer kf --random_roll
+Universal AEC
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_lms_mdf --optimizer lms --random_level --random_roll --dataset combo
 
-Double Talk
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_lms --optimizer lms --random_roll --double_talk
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_nlms_mdf --optimizer nlms --random_level --random_roll --dataset combo
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_rms --optimizer rms --random_roll --double_talk
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_rms_mdf --optimizer rms --random_level --random_roll --dataset combo
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_nlms --optimizer nlms --random_roll --double_talk
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_rls_mdf --optimizer rls --optimize_conjugate --random_level --random_roll --dataset combo
 
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_rls --optimizer rls --optimize_conjugate --random_roll --double_talk
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_kf --optimizer kf --random_roll --double_talk
-
-Double Talk with Scene Change
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_sc_lms --optimizer lms --random_roll --double_talk --scene_change
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_sc_rms --optimizer rms --random_roll --double_talk --scene_change
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_sc_nlms --optimizer nlms --random_roll --double_talk --scene_change
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_sc_rls --optimizer rls --optimize_conjugate --random_roll --double_talk --scene_change
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_sc_kf --optimizer kf --random_roll --double_talk --scene_change
-
-Double Talk Nonlinear
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_nl_lms --optimizer lms --random_roll --double_talk --dataset nonlinear
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_nl_rms --optimizer rms --random_roll --double_talk --dataset nonlinear
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_nl_nlms --optimizer nlms --random_roll --double_talk --dataset nonlinear
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_nl_rls --optimizer rls --optimize_conjugate --random_roll --double_talk --dataset nonlinear
-
-python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_dt_nl_kf --optimizer kf --random_roll --double_talk --dataset nonlinear
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_kf_mdf --optimizer kf --random_level --random_roll --dataset combo
 """
 if __name__ == "__main__":
     import pprint
@@ -87,7 +63,9 @@ if __name__ == "__main__":
     parser.add_argument("--double_talk", action="store_true")
     parser.add_argument("--scene_change", action="store_true")
     parser.add_argument("--random_roll", action="store_true")
+    parser.add_argument("--random_level", action="store_true")
     parser.add_argument("--dataset", type=str, default="linear")
+    parser.add_argument("--true_rir_len", type=int, default=None)
 
     parser = aec.AECOLS.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
@@ -96,25 +74,41 @@ if __name__ == "__main__":
 
     if kwargs["dataset"] == "linear":
         aec_dataset = aec.MSFTAECDataset_RIR
+        dset_kwargs = {
+            "double_talk": kwargs["double_talk"],
+            "scene_change": kwargs["scene_change"],
+            "random_roll": kwargs["random_roll"],
+            "random_level": kwargs["random_level"],
+            "rir_len": kwargs["true_rir_len"],
+        }
     elif kwargs["dataset"] == "nonlinear":
         aec_dataset = aec.MSFTAECDataset
+        dset_kwargs = {
+            "double_talk": kwargs["double_talk"],
+            "scene_change": kwargs["scene_change"],
+            "random_roll": kwargs["random_roll"],
+            "random_level": kwargs["random_level"],
+        }
+    elif kwargs["dataset"] == "combo":
+        aec_dataset = aec.ComboAECDataset
+        dset_kwargs = {
+            "random_roll": kwargs["random_roll"],
+            "random_level": kwargs["random_level"],
+        }
 
+    # make the dataloders
     val_loader = NumpyLoader(
         aec_dataset(
             mode="val",
-            double_talk=kwargs["double_talk"],
-            scene_change=kwargs["scene_change"],
-            random_roll=kwargs["random_roll"],
+            **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
-        num_workers=2,
+        num_workers=4,
     )
     test_loader = NumpyLoader(
         aec_dataset(
             mode="test",
-            double_talk=kwargs["double_talk"],
-            scene_change=kwargs["scene_change"],
-            random_roll=kwargs["random_roll"],
+            **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
         num_workers=0,
@@ -149,21 +143,21 @@ if __name__ == "__main__":
     best_val_scores = np.array([np.inf])
 
     # final holder
-    median_val_scores = []
+    mean_val_scores = []
 
     for config in tqdm.tqdm(all_configs):
         config_dict = dict(zip(list(tuning_options.keys()), config))
         outer_learned["optimizer_p"].update(config_dict)
         val_loss = system.val_loop(outer_learnable=outer_learned)
 
-        median_val_scores.append(np.median(val_loss))
+        mean_val_scores.append(np.nanmean(val_loss))
 
-        if np.median(val_loss) < np.median(best_val_scores):
+        if np.nanmean(val_loss) < np.nanmean(best_val_scores):
             best_config = config_dict
             best_val_scores = val_loss
 
     for i in range(len(all_configs)):
-        print(f"CFG: {all_configs[i]} -- {median_val_scores[i]}")
+        print(f"CFG: {all_configs[i]} -- {mean_val_scores[i]}")
 
     # run test and save the best parameters
     outer_learned["optimizer_p"].update(best_config)
@@ -177,8 +171,8 @@ if __name__ == "__main__":
         f"Mean Test:{np.nanmean(test_loss)} - Median Test:{np.nanmedian(test_loss)} - % NAN {percent_nan}"
     )
 
-    # save this model in the autodsp format
-    ckpt_cb = CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts")
+    # save this model in the metaaf format
+    ckpt_cb = CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./meta_ckpts")
     ckpt_cb.on_init(
         system.inner_fixed, system.outer_fixed, system.kwargs, outer_learned
     )

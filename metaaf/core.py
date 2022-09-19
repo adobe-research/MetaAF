@@ -6,6 +6,24 @@ from jax.tree_util import Partial, tree_map
 from metaaf.optimizer_utils import FeatureContainer
 
 
+def tree_stack(tree_list, axis):
+    """Stack the elements of a list of tree maps with the same structure
+
+    Args:
+        tree_list (_type_): List of treemaps
+        axis      (_type_): Int axis to stack
+
+    Returns:
+        _type_: Single treemap with values stacked.
+    """
+    leaves, treedef = list(
+        zip(*[jax.tree_util.tree_flatten(tree) for tree in tree_list])
+    )
+    leaves = list(zip(*leaves))
+    stacked_leaves = [jnp.stack(l, axis) for l in leaves]
+    return treedef[0].unflatten(stacked_leaves)
+
+
 def tree_slice_axis(tmap, idx_start, idx_len):
     """Get slice of elements in a tree across first k dimensions while preserving others
 
@@ -186,13 +204,7 @@ def make_inner_loop(
             # make the new state
             state = (filter_s, opt_s, preprocess_s, postprocess_s, key)
 
-            # only save first model output when training
-            if isinstance(out, dict):
-                cur_out = out["out"]
-            else:
-                cur_out = out
-
-            return state, (filter_loss, cur_out)
+            return state, (filter_loss, out)
 
         # run the sequence of updates
         init_state = (filter_s, opt_s, preprocess_s, postprocess_s, key)
@@ -201,7 +213,7 @@ def make_inner_loop(
             step_update_inner, init_state, steps
         )
 
-        out = jnp.concatenate(out, 0)
+        # out = jnp.concatenate(out, 0)
         filter_s, opt_s, preprocess_s, postprocess_s, _ = final_state
 
         # this is the meta loss function
@@ -519,8 +531,7 @@ def make_fit_single(
         )
 
         all_losses = []
-        first_out = []
-        aux_out = []
+        out = []
 
         # Iterate over n_steps
         for i in range(n_filter_updates):
@@ -530,26 +541,26 @@ def make_fit_single(
             batch_hop = {"signals": batch_hop_signals, "metadata": batch["metadata"]}
 
             key, *subkeys = jax.random.split(key, 1 + batch_size)
-            out, loss, batch_state = batch_step(
+            cur_out, loss, batch_state = batch_step(
                 batch_state, batch_hop, jnp.array(subkeys)
             )
             all_losses.append(loss)
-
-            if isinstance(out, dict):
-                first_out.append(out["out"])
-                aux_out.append(out)
-            else:
-                first_out.append(out)
+            out.append(cur_out)
 
         # we can stack the first output since we know its shape
         # other outputs go in the auxilliary list
-        first_out = jnp.concatenate(first_out, axis=1)
-        all_losses = jnp.array(all_losses)
-        final_loss = meta_loss(
-            all_losses, first_out, batch["signals"], batch["metadata"], outer_learnable
+        out = tree_stack(out, axis=1)
+        first_out = jnp.reshape(
+            out["out"] if type(out) is dict else out,
+            (batch_size, -1, out["out"].shape[-1]),
         )
 
-        aux = (final_loss, all_losses, aux_out, batch_state)
+        all_losses = jnp.array(all_losses).T
+        final_loss = meta_loss(
+            all_losses, out, batch["signals"], batch["metadata"], outer_learnable
+        )
+
+        aux = (final_loss, all_losses, out, batch_state)
         return first_out, aux
 
     return fit_single

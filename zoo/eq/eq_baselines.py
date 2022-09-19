@@ -16,8 +16,23 @@ from metaaf.callbacks import CheckpointCallback
 import zoo.eq.eq as eq
 
 """
-Sample command to tune a baseline:
+Unconstrained
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_none_rls --optimizer rls --constraint none --optimize_conjugate
+
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_none_nlms --optimizer nlms --constraint none
+
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_none_rms --optimizer rms --constraint none
+
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_none_lms --optimizer lms --constraint none
+
+Constrained
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_antialias_rls --optimizer rls --constraint antialias --optimize_conjugate
+
 python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_antialias_nlms --optimizer nlms --constraint antialias
+
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_antialias_rms --optimizer rms --constraint antialias
+
+python eq_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name eq_antialias_lms --optimizer lms --constraint antialias
 """
 if __name__ == "__main__":
     import pprint
@@ -47,7 +62,7 @@ if __name__ == "__main__":
     pprint.pprint(kwargs)
 
     val_loader = NumpyLoader(
-        eq.EQDAPSDataset(mode="val", n_signals=2048),
+        eq.EQDAPSDataset(mode="val", n_signals=2048, is_fir=True),
         batch_size=kwargs["batch_size"],
         num_workers=2,
     )
@@ -115,7 +130,7 @@ if __name__ == "__main__":
     )
 
     # save this model in the autodsp format
-    ckpt_cb = CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts")
+    ckpt_cb = CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./meta_ckpts")
     ckpt_cb.on_init(
         system.inner_fixed, system.outer_fixed, system.kwargs, outer_learned
     )
