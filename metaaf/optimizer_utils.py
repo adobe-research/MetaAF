@@ -24,7 +24,7 @@ class FeatureContainer:
 
 # below is taken and modified from
 # https://jax.readthedocs.io/en/latest/_modules/jax/example_libraries/optimizers.html#clip_grads
-# Original license for all code below this line follows. 
+# Original license for all code below this line follows.
 
 # Copyright 2018 Google LLC
 #

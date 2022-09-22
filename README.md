@@ -1,8 +1,8 @@
 
-
 <div align="center">
 
 # Meta-AF: Meta-Learning for Adaptive Filters
+
 [Jonah Casebeer](https://jmcasebeer.github.io)<sup>1*</sup>, [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/)<sup>2</sup>, and [Paris Smaragdis](https://paris.cs.illinois.edu/)<sup>1</sup>
 
 <sup>1</sup> Department of Computer Science, University of Illinois at Urbana-Champaign<br>
@@ -13,7 +13,7 @@
 [![Demo Video](https://ccrma.stanford.edu/~njb/index_files/metaaf-video-2022.png)](https://youtu.be/incb1QNSvW8)
 
  <!-- START doctoc generated TOC please keep comment here to allow auto update -->
- <!-- doctoc --maxlevel 2 README.md --> 
+ <!-- doctoc --maxlevel 2 README.md -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**
 
@@ -28,28 +28,23 @@
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Abstract
-Adaptive filtering algorithms are pervasive throughout modern society and have had a significant impact on a wide variety of domains including audio processing, biomedical sensing, astropyhysics, and many more. Adaptive filters typically operate via specialized online, iterative optimization methods but can be laborious to develop and require domain expertise. In this work, we frame the development of adaptive filters as a deep meta-learning problem and present a framework for learning online, adaptive signal processing algorithms or update rules directly from data using self-supervision. We focus on audio applications and apply our approach to system identification, acoustic echo cancellation, blind equalization, multi-channel dereverberation, and beamforming. For each application, we compare against common baselines and/or state-of-the-art methods and show we can learn high-performing adaptive filters that operate in real-time and, in most cases, significantly out perform specially developed methods for each task using a single general-purpose configuration of our method. 
+
+Adaptive filtering algorithms are pervasive throughout modern society and have had a significant impact on a wide variety of domains including audio processing, biomedical sensing, astropyhysics, and many more. Adaptive filters typically operate via specialized online, iterative optimization methods but can be laborious to develop and require domain expertise. In this work, we frame the development of adaptive filters as a deep meta-learning problem and present a framework for learning online, adaptive signal processing algorithms or update rules directly from data using self-supervision. We focus on audio applications and apply our approach to system identification, acoustic echo cancellation, blind equalization, multi-channel dereverberation, and beamforming. For each application, we compare against common baselines and/or state-of-the-art methods and show we can learn high-performing adaptive filters that operate in real-time and, in most cases, significantly out perform specially developed methods for each task using a single general-purpose configuration of our method.
 
 For more details, please see:
-"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/2204.11942)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. If you use ideas or code from this work, pleace cite our paper:
+"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/2204.11942)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. If you use ideas or code from this work, please cite our paper:
 
 ```BibTex
-@article{casebeer2022metaaf,
-      title={Meta-AF: Meta-Learning for Adaptive Filters}, 
-      author={Jonah Casebeer and Nicholas J. Bryan and Paris Smaragdis},
-      year={2022},
-      eprint={2204.11942},
-      archivePrefix={arXiv},
-      primaryClass={cs.SD}
+@article{casebeer2022meta,
+  title={Meta-AF: Meta-Learning for Adaptive Filters},
+  author={Casebeer, Jonah and Bryan, Nicholas J and Smaragdis, Paris},
+  journal={arXiv preprint arXiv:2204.11942},
+  year={2022}
 }
 ```
 
-
-
 <!-- <div align="center">
 </br>
-
-
 
 [**Demos**](#demos)
 | [**Code**](#code)
@@ -57,13 +52,8 @@ For more details, please see:
 | [**License**](#license)
 | [**Related Works**](#related-works)
 
-
 </br>
 </div> -->
-
-
-
-
 
 ## Demos
 
@@ -73,13 +63,14 @@ For audio demonstrations of the work and `metaaf` package in action, please chec
 
 We open source all code for the work via our `metaaf` python pip package. Our `metaaf` package has functionality which enables meta-learning optimizers for near-arbitrary adaptive filters for any differentiable objective. `metaaf` automatically manages online overlap-save and overlap-add for single/multi channel and single/multi frame filters. We also include generic implementations of LMS, RMSProp, NLMS, and RLS for benchmarking purposes. Finally, `metaaf` includes implementation of generic GRU based optimizers, which are compatible with any filter defined in the `metaaf` format. Below, you can find example usage, usage for several common adaptive filter tasks (in the adaptive filter zoo), and installation instructions.
 
-The `metaaf` package is relatively small, being limited to a dozen files which enable much more functionality than we demo here. The core meta-learning code is in `core.py`, the buffered and online filter implementations are in `filter.py`, and the RNN based optimizers are in `optimizer_gru.py` and `optimizer_fgru.py`. The remaining files hold utilities and generic implementations of baseline optimizers. `meta.py` contains a class for managing training. 
+The `metaaf` package is relatively small, being limited to a dozen files which enable much more functionality than we demo here. The core meta-learning code is in `core.py`, the buffered and online filter implementations are in `filter.py`, and the RNN based optimizers are in `optimizer_gru.py` and `optimizer_fgru.py`. The remaining files hold utilities and generic implementations of baseline optimizers. `meta.py` contains a class for managing training.
 
 ### Installation
 
 To install the `metaaf` python package, you will need a working JAX install. You can set one up by following the official directions [here](https://github.com/google/jax#installation). Below is an example of the commands we use to setup a new conda environment called `metaenv` in which we install `metaaf` and any dependencies.
 
 #### GPU Setup
+
 ```{bash}
 ### GPU
 # Install all the cuda and cudnn prerequisites
@@ -92,13 +83,14 @@ conda activate metaenv
 
 # Actually install jax
 # You may need to change the cuda/cudnn version numbers depending on your machine
-pip install jax[cuda11_cudnn82]==0.3.7 -f https://storage.googleapis.com/jax-releases/jax_releases.html  
+pip install jax[cuda11_cudnn82]==0.3.15 -f https://storage.googleapis.com/jax-releases/jax_releases.html  
 
 # Install Haiku
-pip install git+https://github.com/deepmind/dm-haiku@v0.0.6
+pip install git+https://github.com/deepmind/dm-haiku@v0.0.8
 ```
 
 #### CPU Setup
+
 ```{bash}
 ### CPU. x86 only
 conda create -yn metaenv python=3.7 && 
@@ -109,12 +101,11 @@ conda activate metaenv
 # Actually install jax
 # You may need to change the cuda/cudnn version numbers depending on your machine
 pip install --upgrade pip
-pip install --upgrade "jax[cpu]"==0.3.7
+pip install --upgrade "jax[cpu]"==0.3.15
 
 # Install Haiku
-pip install git+https://github.com/deepmind/dm-haiku@v0.0.6
+pip install git+https://github.com/deepmind/dm-haiku@v0.0.8
 ```
-
 
 Finally, with the prerequisites done, you can install `metaaf` by cloning the repo, moving into the base directory, and running `pip install -e ./`. This `pip install` adds the remaining dependencies. To run the demo notebook, you also need to:
 
@@ -129,8 +120,6 @@ pip install matplotlib
 # Install widgets for a progress bar
 pip install ipywidgets
 ```
-
-
 
 ### Example Usage
 
@@ -215,12 +204,21 @@ def filter_loss(out, data_samples, metadata):
     return jnp.vdot(e, e) / (e.size)
 ```
 
-We can construct the meta-loss in a similar fashion.
+We can construct the meta-train and meta-val losses in a similar fashion.
 
 ```{python}
-def meta_loss(losses, outputs, data_samples, metadata, outer_learnable):
-    EPS = 1e-9
-    return jnp.log(jnp.mean(jnp.abs(outputs - data_samples["d"]) ** 2) + EPS)
+def meta_train_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.concatenate(outputs["out"], 0)
+    return jnp.log(jnp.mean(jnp.abs(out - data_samples["d"]) ** 2) +  1e-9)
+
+def meta_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.reshape(
+        outputs["out"],
+        (outputs["out"].shape[0], -1, outputs["out"].shape[-1]),
+    )
+    d = data_samples["d"]
+    min_len = min(out.shape[1], d.shape[1])
+    return jnp.log(jnp.mean(jnp.abs(out[:, :min_len] - d[:, :min_len]) ** 2) +  1e-9)
 ```
 
 With everything defined, we can setup the Meta-Trainer and start training.
@@ -239,8 +237,8 @@ system = MetaAFTrainer(
     _filter_fwd=_SystemID_fwd,
     filter_kwargs=SystemID.grab_args(kwargs),
     filter_loss=filter_loss,
-    meta_train_loss=meta_loss,
-    meta_val_loss=meta_loss,
+    meta_train_loss=meta_train_loss,
+    meta_val_loss=meta_val_loss,
     optimizer_kwargs=ElementWiseGRU.grab_args(kwargs),
     train_loader=train_loader,
     val_loader=val_loader,
@@ -258,21 +256,30 @@ That is it! For more advanced options check out the zoo, where we demonstrate ca
 
 ## Meta-AF Zoo
 
-The [Meta-AF Zoo](zoo/README.md) contains implementations for system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer all in the `metaaf` framework. You can find intructions for how to run, evaluate, and setup those models [here](zoo/README.md). For trained weights, please see the tagged release zip file [here](https://github.com/adobe-research/MetaAF/releases/tag/v0.1.0).
-
-
+The [Meta-AF Zoo](zoo/README.md) contains implementations for system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer all in the `metaaf` framework. You can find intructions for how to run, evaluate, and setup those models [here](zoo/README.md). For trained weights, and tuned baselines, please see the tagged release zip file [here](https://github.com/adobe-research/MetaAF/releases/tag/v0.1.0).
 
 ## License
 
 All core utility code within the `metaaf` folder is licensed via the [University of Illinois Open Source License](metaaf/LICENSE). All code within the `zoo` folder and model weights are licensed via the [Adobe Research License](zoo/LICENSE). Copyright (c) Adobe Systems Incorporated. All rights reserved.
 
-
-
 ## Related Works
 
-Please also see an early version of this work:
+An extension of this work using `metaaf` [here](zoo/hometa_aec/README.md):
 
-"[Auto-DSP: Learning to Optimize Acoustic Echo Cancellers](https://arxiv.org/abs/2110.04284)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022.
+"[Meta-Learning for Adaptive Filters with Higher-Order Frequency Dependencies](https://arxiv.org/abs/2209.09955)", [Junkai Wu](https://www.linkedin.com/in/junkai-wu-19015b198/), [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), IWAENC, 2022.
+
+```BibTex
+@article{wu2022metalearning,
+  title={Meta-Learning for Adaptive Filters with Higher-Order Frequency Dependencies},
+  author={Wu, Junkai and Casebeer, Jonah and Bryan, Nicholas J. and Smaragdis, Paris},    
+  journal={arXiv preprint arXiv:2209.09955},
+  year={2022},
+}
+```
+
+An early version of this work:
+
+"[Auto-DSP: Learning to Optimize Acoustic Echo Cancellers](https://arxiv.org/abs/2110.04284)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), WASPAA, 2021.
 
 ```BibTex
 @inproceedings{casebeer2021auto,

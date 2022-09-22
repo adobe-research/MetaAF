@@ -39,7 +39,7 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
 
     def update(i, features, jax_state):
         filter_p = jax_state
-        update = -step_size * jnp.conj(features.filter_features)
+        update = step_size * features.cur_outputs["grad"]
         return filter_p + update
 
     def get_params(jax_state):

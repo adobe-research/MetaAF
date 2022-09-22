@@ -18,9 +18,9 @@ def default_args():
 
 def get_tuning_options(**kwargs):
     return {
-        "init_scale_R": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2],
-        "init_scale_P": [1e-4, 1e-3, 1e-2, 1e-1, 1.0],
-        "forget_factor": [0.99, 0.999, 0.9999, 0.99999],
+        "init_scale_R": [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+        "init_scale_P": [1e-4, 1e-3, 1e-2, 1e-1],
+        "forget_factor": [0.5, 0.6, 0.7, 0.8, 0.9, 0.99, 0.999],
     }
 
 
@@ -31,7 +31,7 @@ def _fwd(x, **kwargs):
 
 def init_optimizer(filter_p, batch_data, optimizer_dict, key):
     # only needs to init the step size
-    return {"forget_factor": 0.999, "init_scale_R": 1e-4, "init_scale_P": 1e-2}
+    return {"forget_factor": 0.75, "init_scale_R": 1e-4, "init_scale_P": 1e-2}
 
 
 # the actual KF step
@@ -43,16 +43,16 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
 
     def init(filter_p):
         # real valued since they store a magnitude
-        R = jnp.ones(filter_p.shape[1]) * init_scale_R
-        P = jnp.ones(filter_p.shape[1]) * init_scale_P
+        R = jnp.ones((1, filter_p.shape[1])) * init_scale_R
+        P = jnp.ones((filter_p.shape[0], filter_p.shape[1])) * init_scale_P
 
         return (filter_p, R, P)
 
     def update(i, features, jax_state):
         filter_p, R, P = jax_state
 
-        e = features.cur_outputs["e"][0, :, 0]
-        u = features.cur_outputs["u"][0, :, 0]
+        e = features.cur_outputs["e"][-1, None, :, 0]  # 1 x F
+        u = features.cur_outputs["u"][..., 0]  # Block x F
 
         # update error psd estimate
         R = forget_factor * R + (1 - forget_factor) * jnp.abs(e) ** 2
@@ -61,17 +61,15 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
         K = P * u.conj() / (u * P * u.conj() + 2 * R)
 
         # update P
-        P = (1 - init_scale_P ** 2) * (1 - 0.5 * K * u) * P + init_scale_P ** 2 * (
-            jnp.abs(filter_p[0, :, 0]) ** 2
+        P = (1 - init_scale_P**2) * (1 - 0.5 * K * u) * P + init_scale_P**2 * (
+            jnp.abs(filter_p[..., 0]) ** 2
         )
 
         # get step size
         step = (1 - init_scale_P) * P / (u * P * u.conj() + 2 * R)
 
         # update filter
-        filter_p = (
-            filter_p + step[None, :, None] * u[None, :, None].conj() * e[None, :, None]
-        )
+        filter_p = filter_p + step[..., None] * u[..., None].conj() * e[..., None]
 
         return (filter_p, R, P)
 

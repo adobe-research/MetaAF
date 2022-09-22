@@ -16,10 +16,8 @@
 # limitations under the License.
 
 
-
 import numpy as np
 from torch.utils.data import DataLoader
-
 
 
 def numpy_collate(batch):

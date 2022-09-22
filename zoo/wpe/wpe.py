@@ -4,6 +4,7 @@ import glob2
 
 import haiku as hk
 import jax
+from jax.tree_util import Partial
 import jax.numpy as jnp
 import numpy as np
 import soundfile as sf
@@ -14,6 +15,7 @@ from metaaf.data import NumpyLoader
 from metaaf.filter import OverlapAdd
 from metaaf.meta import MetaAFTrainer
 from metaaf.callbacks import CheckpointCallback, WandBCallback, AudioLoggerCallback
+from metaaf import optimizer_gru
 from metaaf import optimizer_fgru
 
 from zoo import metrics
@@ -191,10 +193,11 @@ class ReverbDataset(Dataset):
 
 
 class WPEOLA(OverlapAdd, hk.Module):
-    def __init__(self, n_taps, delay, **kwargs):
+    def __init__(self, n_taps, delay, antialias, **kwargs):
         super().__init__(**kwargs)
         self.n_taps = n_taps
         self.delay = delay
+        self.antialias = antialias
 
         assert self.n_frames == self.n_taps + self.delay
 
@@ -210,6 +213,11 @@ class WPEOLA(OverlapAdd, hk.Module):
 
         return ((out.conj() * out).real * inverse_power).mean()
 
+    def do_antialias(self, x):
+        return self.fft(
+            self.ifft(x, axis=1) * self.synthesis_window[None, :, None], axis=1
+        )
+
     def __ola_call__(self, d, metadata):
         # collect a buffer sized anti-aliased filter
         w = self.get_filter(name="w", shape=(self.n_taps, self.n_freq, self.n_in_chan))
@@ -219,13 +227,27 @@ class WPEOLA(OverlapAdd, hk.Module):
         d_input = d[: self.n_taps]
 
         # apply the filter
-        d_est = (w.conj() * d_input).sum((0, 2))
+        d_est = (w * d_input).sum((0, 2))
         out = d_target - d_est
+
+        u = d_input
+        d = d_target[None, ..., None]
+        e = out[None, ..., None]
+        y = d_est[None, ..., None]
+
+        if self.antialias:
+            e = self.do_antialias(e)
+            y = self.do_antialias(y)
+
+        grad = u.conj() * e / (d.conj() * d).real.mean((0, 2), keepdims=True)
+
         return {
             "out": out[..., None],
-            "u": d_input,
-            "d": d_target[None, ..., None],
-            "e": (d_target - d_est)[None, ..., None],
+            "u": u,
+            "d": d,
+            "e": e,
+            "y": y,
+            "grad": grad,
             "loss": self.stable_normalized_loss(out, d),
         }
 
@@ -233,13 +255,14 @@ class WPEOLA(OverlapAdd, hk.Module):
     def add_args(parent_parser):
         parent_parser = super(WPEOLA, WPEOLA).add_args(parent_parser)
         parser = parent_parser.add_argument_group("DereverbOLA")
+        parser.add_argument("--antialias", action="store_true")
         parser.add_argument("--n_taps", type=int, default=10)
         parser.add_argument("--delay", type=int, default=3)
         return parent_parser
 
     @staticmethod
     def grab_args(kwargs):
-        keys = ["n_taps", "delay"]
+        keys = ["n_taps", "delay", "antialias"]
         class_keys = {k: kwargs[k] for k in keys}
         class_keys.update(super(WPEOLA, WPEOLA).grab_args(kwargs))
         class_keys["n_frames"] = class_keys["n_taps"] + class_keys["delay"]
@@ -249,6 +272,52 @@ class WPEOLA(OverlapAdd, hk.Module):
 def _WPEOLA_fwd(d, u, metadata=None, init_data=None, **kwargs):
     gen_filter = WPEOLA(**kwargs)
     return gen_filter(d=d)
+
+
+class NOOPWPEOLA(OverlapAdd, hk.Module):
+    def __init__(self, n_taps, delay, antialias, **kwargs):
+        super().__init__(**kwargs)
+        self.n_taps = n_taps
+        self.delay = delay
+        self.antialias = antialias
+
+    def __ola_call__(self, u, d):
+        pass
+
+    def __call__(self, u, d):
+        shape = [self.n_taps, self.n_freq, self.n_in_chan]
+        w = hk.get_parameter("w", shape, init=metaaf.complex_utils.complex_zeros)
+        return {
+            "out": u[:, 0, None],
+            "u": w,
+            "d": w[0, :, 0][None, ..., None],
+            "e": w[0, :, 0][None, ..., None],
+            "y": w[0, :, 0][None, ..., None],
+            "grad": w,
+            "loss": 0.0,
+        }
+
+    @staticmethod
+    def add_args(parent_parser):
+        parent_parser = super(NOOPWPEOLA, NOOPWPEOLA).add_args(parent_parser)
+        parser = parent_parser.add_argument_group("DereverbOLA")
+        parser.add_argument("--antialias", action="store_true")
+        parser.add_argument("--n_taps", type=int, default=10)
+        parser.add_argument("--delay", type=int, default=3)
+        return parent_parser
+
+    @staticmethod
+    def grab_args(kwargs):
+        keys = ["n_taps", "delay", "antialias"]
+        class_keys = {k: kwargs[k] for k in keys}
+        class_keys.update(super(NOOPWPEOLA, NOOPWPEOLA).grab_args(kwargs))
+        class_keys["n_frames"] = class_keys["n_taps"] + class_keys["delay"]
+        return class_keys
+
+
+def _NOOPWPEOLA_fwd(u, d, metadata=None, init_data=None, **kwargs):
+    gen_filter = NOOPWPEOLA(**kwargs)
+    return gen_filter(u=u, d=d)
 
 
 def dereverb_loss(out, data_samples, metadata):
@@ -274,9 +343,13 @@ def make_srr_val(window_size, hop_size):
     buffer_size = window_size - hop_size
 
     def srr_val(losses, outputs, data_samples, metadata, outer_learnable):
+        out = jnp.reshape(
+            outputs["out"],
+            (outputs["out"].shape[0], -1, outputs["out"].shape[-1]),
+        )
         srr_scores = []
-        for i in range(len(outputs)):
-            out_trim = outputs[i, buffer_size:]
+        for i in range(len(out)):
+            out_trim = out[i, buffer_size:]
             min_len = min(out_trim.shape[0], data_samples["d"].shape[1])
 
             d = data_samples["d"][i, :min_len, 0]
@@ -295,7 +368,8 @@ def make_meta_log_mse_loss(window_size, hop_size):
 
     def meta_log_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
         # trim the buffer
-        out_trim = outputs[buffer_size:]
+        out = jnp.concatenate(outputs["out"], 0)
+        out_trim = out[buffer_size:]
         d_trim = data_samples["d"][: len(out_trim)]
 
         stft_output = jnp.mean(jnp.abs(simple_stft(out_trim)) ** 2, (0, 2))
@@ -308,13 +382,23 @@ def make_meta_log_mse_loss(window_size, hop_size):
     return meta_log_mse_loss
 
 
+def meta_log_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.concatenate(outputs["out"], 0)
+    EPS = 1e-8
+    return jnp.log(jnp.mean(jnp.abs(out) ** 2) + EPS)
+
+
 def make_stoi_val(window_size, hop_size):
     buffer_size = window_size - hop_size
 
-    def stoi_val(losses, outputs, data_samples, outer_learnable):
+    def stoi_val(losses, outputs, data_samples, metadata, outer_learnable):
+        out = jnp.reshape(
+            outputs["out"],
+            (outputs["out"].shape[0], -1, outputs["out"].shape[-1]),
+        )
         stoi_scores = []
         for i in range(len(outputs)):
-            out_trim = outputs[i, buffer_size:]
+            out_trim = out[i, buffer_size:]
             min_len = min(out_trim.shape[0], data_samples["u"].shape[1])
 
             u = data_samples["u"][i, :min_len, 0]
@@ -329,10 +413,10 @@ def make_stoi_val(window_size, hop_size):
 
 """
 WPE 5 1
-python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_1_c --unroll 16 --n_taps 5 --delay 2 --optimizer fgru
+python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_1_c_td --unroll 16 --n_taps 5 --delay 2 --optimizer fgru
 
 WPE 5 4
-python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 4 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_4_c --unroll 16 --n_taps 5 --delay 2 --optimizer fgru 
+python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 4 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_4_c_td --unroll 16 --n_taps 5 --delay 2 --optimizer fgru --debug
 
 WPE 5 8
 python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 8 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_8_c_td --unroll 16 --n_taps 5 --delay 2 --optimizer fgru 
@@ -343,17 +427,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--debug", action="store_true")
-    parser = optimizer_fgru.TimeChanCoupledGRU.add_args(parser)
+    parser.add_argument("--optimizer", type=str, default="gru")
+
+    if parser.parse_known_args()[0].optimizer == "gru":
+        parser = optimizer_gru.ElementWiseGRU.add_args(parser)
+        gru_fwd = optimizer_gru._elementwise_gru_fwd
+        gru_init = optimizer_gru.init_optimizer_all_data
+        gru_map = optimizer_gru.make_mapped_optmizer_all_data
+        gru_grab_args = optimizer_gru.ElementWiseGRU.grab_args
+    elif parser.parse_known_args()[0].optimizer == "fgru":
+        parser = optimizer_fgru.TimeChanCoupledGRU.add_args(parser)
+        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        gru_init = optimizer_fgru.init_optimizer_all_data
+        gru_map = optimizer_fgru.make_mapped_optmizer_all_data
+        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
 
     parser = WPEOLA.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
     kwargs = vars(parser.parse_args())
 
     # set outsize automatically
-    kwargs["outsize"] = kwargs["n_in_chan"] * kwargs["n_taps"]
+    if parser.parse_known_args()[0].optimizer == "fgru":
+        kwargs["outsize"] = kwargs["n_in_chan"] * kwargs["n_taps"]
 
-    outer_train_loss = make_meta_log_mse_loss(kwargs["window_size"], kwargs["hop_size"])
+    outer_train_loss = meta_log_mse_loss
     outer_val_loss = make_srr_val(kwargs["window_size"], kwargs["hop_size"])
+
     pprint.pprint(kwargs)
 
     # make the dataloders
@@ -362,13 +461,12 @@ if __name__ == "__main__":
             mode="train",
             n_mics=kwargs["n_in_chan"],
             signal_len=128000,
-            debug=kwargs["debug"],
         ),
         batch_size=kwargs["batch_size"],
         collate_fn=numpy_trim_collate,
         drop_last=True,
         shuffle=True,
-        num_workers=16,
+        num_workers=8,
     )
 
     val_loader = NumpyLoader(
@@ -376,12 +474,11 @@ if __name__ == "__main__":
             mode="val",
             n_mics=kwargs["n_in_chan"],
             signal_len=128000,
-            debug=kwargs["debug"],
         ),
         batch_size=kwargs["batch_size"] // kwargs["n_devices"],
         collate_fn=numpy_trim_collate,
         drop_last=True,
-        num_workers=8,
+        num_workers=2,
     )
 
     # THIS NEEDS TO BE BATCH SIZE ONE AND NOT TRIM/PAD THE TEST DATA
@@ -389,17 +486,18 @@ if __name__ == "__main__":
         ReverbDataset(
             mode="test",
             n_mics=kwargs["n_in_chan"],
-            debug=kwargs["debug"],
         ),
         batch_size=1,
         num_workers=0,
     )
     # make the callbacks
-    callbacks = [
-        CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts"),
-        AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./taslp_outputs"),
-        WandBCallback(project="meta-wpe", name=kwargs["name"], entity=None),
-    ]
+    callbacks = []
+    if not kwargs["debug"]:
+        callbacks = [
+            CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./meta_ckpts"),
+            AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./meta_outputs"),
+            WandBCallback(project="meta-wpe", name=kwargs["name"], entity=None),
+        ]
 
     system = MetaAFTrainer(
         _filter_fwd=_WPEOLA_fwd,
@@ -408,12 +506,12 @@ if __name__ == "__main__":
         train_loader=train_loader,
         val_loader=val_loader,
         test_loader=test_loader,
-        _optimizer_fwd=optimizer_fgru._timechancoupled_gru_fwd,
-        optimizer_kwargs=optimizer_fgru.TimeChanCoupledGRU.grab_args(kwargs),
+        _optimizer_fwd=gru_fwd,
+        optimizer_kwargs=gru_grab_args(kwargs),
         meta_train_loss=outer_train_loss,
         meta_val_loss=outer_val_loss,
-        init_optimizer=optimizer_fgru.init_optimizer_all_data,
-        make_mapped_optmizer=optimizer_fgru.make_mapped_optmizer_all_data,
+        init_optimizer=gru_init,
+        make_mapped_optmizer=gru_map,
         callbacks=callbacks,
         kwargs=kwargs,
     )

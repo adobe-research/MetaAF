@@ -4,6 +4,7 @@ import argparse
 import soundfile as sf
 import os
 import glob2
+import pandas
 
 import jax
 import jax.numpy as jnp
@@ -16,6 +17,7 @@ from metaaf import optimizer_gru
 from metaaf.data import NumpyLoader
 from metaaf.filter import OverlapSave
 from metaaf.meta import MetaAFTrainer
+from metaaf import optimizer_fgru
 from metaaf.callbacks import CheckpointCallback, WandBCallback, AudioLoggerCallback
 
 
@@ -23,18 +25,98 @@ from zoo import metrics
 from zoo.__config__ import AEC_DATA_DIR, RIR_DATA_DIR
 
 
+class ComboAECDataset(Dataset):
+    def __init__(
+        self,
+        aec_dir=AEC_DATA_DIR,
+        rir_dir=RIR_DATA_DIR,
+        mode="train",
+        random_roll=False,
+        random_level=False,
+        max_len=160000,
+    ):
+
+        self.mode = mode
+        self.datasets = [
+            MSFTAECDataset_RIR(
+                aec_dir=aec_dir,
+                rir_dir=rir_dir,
+                mode=mode,
+                double_talk=False,
+                scene_change=False,
+                random_roll=random_roll,
+                random_level=random_level,
+                max_len=max_len,
+            ),
+            MSFTAECDataset_RIR(
+                aec_dir=aec_dir,
+                rir_dir=rir_dir,
+                mode=mode,
+                double_talk=True,
+                scene_change=False,
+                random_roll=random_roll,
+                random_level=random_level,
+                max_len=max_len,
+            ),
+            MSFTAECDataset_RIR(
+                aec_dir=aec_dir,
+                rir_dir=rir_dir,
+                mode=mode,
+                double_talk=True,
+                scene_change=True,
+                random_roll=random_roll,
+                random_level=random_level,
+                max_len=max_len,
+            ),
+            MSFTAECDataset(
+                base_dir=aec_dir,
+                mode=mode,
+                double_talk=True,
+                scene_change=True,
+                random_roll=random_roll,
+                random_level=random_level,
+                max_len=max_len,
+            ),
+        ]
+        self.lens = np.array([len(dset) for dset in self.datasets])
+        self.cum_lens = np.cumsum(self.lens)
+        self.total_len = self.lens.sum()
+
+    def __len__(self):
+        return self.total_len
+
+    def __getitem__(self, idx):
+        dset_idx = np.searchsorted(self.cum_lens - 1, idx)
+        offset = 0 if dset_idx == 0 else self.cum_lens[dset_idx - 1]
+        return self.datasets[dset_idx][idx - offset]
+
+
 class MSFTAECDataset(Dataset):
     def __init__(
         self,
         base_dir=AEC_DATA_DIR,
         mode="train",
-        double_talk=True,
+        double_talk=False,
         scene_change=False,
         random_roll=False,
+        random_level=False,
+        fix_train_roll=False,
         max_len=160000,
+        denoising=False,
     ):
+        if denoising:
+            assert double_talk == True, print(
+                "Nearend talk must be present for denoising"
+            )
 
         synthetic_dir = os.path.join(base_dir, "datasets/synthetic/")
+
+        csv = pandas.read_csv(os.path.join(synthetic_dir, "meta.csv"))
+        nearend_scale_dict = {}
+        for _, row in csv.iterrows():
+            fileid = row["fileid"]
+            nearend_scale_dict[fileid] = row["nearend_scale"]
+        self.nearend_scale_dict = nearend_scale_dict
 
         self.echo_signal_dir = os.path.join(synthetic_dir, "echo_signal")
         self.farend_speech_dir = os.path.join(synthetic_dir, "farend_speech")
@@ -45,6 +127,12 @@ class MSFTAECDataset(Dataset):
         self.double_talk = double_talk
         self.scene_change = scene_change
         self.random_roll = random_roll
+        self.random_level = random_level
+        self.min_uw_scale = -10.0
+        self.max_uw_scale = 10.0
+        self.fix_train_roll = fix_train_roll
+        self.denoising = denoising
+
         if self.scene_change:
             if mode == "val":
                 np.random.seed(95)
@@ -56,11 +144,15 @@ class MSFTAECDataset(Dataset):
                 self.scene_change_pair = np.arange(500)
                 np.random.shuffle(self.scene_change_pair)
                 self.scene_change_idx = np.random.randint(64000, 96000, size=500)
+
         if self.random_roll:
-            if mode == "val":
+            if mode == "train" and self.fix_train_roll:
+                np.random.seed(42)
+                self.random_rolls = np.random.randint(0, 160000, size=9000)
+            elif mode == "val":
                 np.random.seed(95)
                 self.random_rolls = np.random.randint(0, 160000, size=500)
-            elif mode == "test":
+            else:
                 np.random.seed(1337)
                 self.random_rolls = np.random.randint(0, 160000, size=500)
 
@@ -95,6 +187,12 @@ class MSFTAECDataset(Dataset):
             os.path.join(self.farend_speech_dir, f"farend_speech_fileid_{idx}.wav")
         )
 
+        if self.random_level and self.mode == "train":
+            u_scale = np.sqrt(
+                10 ** (np.random.uniform(self.min_uw_scale, self.max_uw_scale) / 10)
+            )
+            u = u * u_scale
+
         e, sr = sf.read(os.path.join(self.echo_signal_dir, f"echo_fileid_{idx}.wav"))
         s, sr = sf.read(
             os.path.join(self.nearend_speech_dir, f"nearend_speech_fileid_{idx}.wav")
@@ -105,12 +203,21 @@ class MSFTAECDataset(Dataset):
         e = np.pad(e, (0, max(0, self.max_len - len(e))))
         s = np.pad(s, (0, max(0, self.max_len - len(s))))
 
+        s = s * self.nearend_scale_dict[idx]
+
+        if self.denoising:
+            d = d - e
+
         if self.random_roll:
-            shift = (
-                np.random.randint(0, self.max_len)
-                if self.mode == "train"
-                else self.random_rolls[idx - self.offset]
-            )
+            if self.mode == "train":
+                if self.fix_train_roll:
+                    shift = self.random_rolls[idx - self.offset]
+                else:
+                    shift = np.random.randint(0, self.max_len)
+
+            else:
+                shift = self.random_rolls[idx - self.offset]
+
             u = np.roll(u, shift)
             d = np.roll(d, shift)
             e = np.roll(e, shift)
@@ -147,9 +254,10 @@ class MSFTAECDataset_RIR(Dataset):
         aec_dir=AEC_DATA_DIR,
         rir_dir=RIR_DATA_DIR,
         mode="train",
-        double_talk=True,
+        double_talk=False,
         scene_change=False,
         random_roll=False,
+        random_level=False,
         rir_len=None,
         max_len=160000,
     ):
@@ -163,8 +271,12 @@ class MSFTAECDataset_RIR(Dataset):
         self.double_talk = double_talk
         self.scene_change = scene_change
         self.random_roll = random_roll
+        self.random_level = random_level
         self.max_len = max_len
         self.rir_len = rir_len
+
+        self.min_uw_scale = -10.0
+        self.max_uw_scale = 10.0
 
         # get same rir split every time
         self.rirs = glob2.glob(rir_dir + "/**/*.wav")
@@ -240,6 +352,16 @@ class MSFTAECDataset_RIR(Dataset):
             )
         )
 
+        if self.random_level and self.mode == "train":
+            w_scale = np.sqrt(
+                10 ** (np.random.uniform(self.min_uw_scale, self.max_uw_scale) / 10)
+            )
+            w = w * w_scale
+            u_scale = np.sqrt(
+                10 ** (np.random.uniform(self.min_uw_scale, self.max_uw_scale) / 10)
+            )
+            u = u * u_scale
+
         e = scipy.signal.fftconvolve(u, w)[: len(u)]
 
         if self.double_talk:
@@ -254,7 +376,7 @@ class MSFTAECDataset_RIR(Dataset):
                 else self.sers[idx]
             )
             s_ser_scale = np.sqrt(
-                np.abs(e ** 2).mean() * (10 ** (ser / 10)) / np.abs(s ** 2).mean()
+                np.abs(e**2).mean() * (10 ** (ser / 10)) / np.abs(s**2).mean()
             )
             s = s * s_ser_scale
         else:
@@ -291,10 +413,8 @@ class MSFTAECDataset_RIR(Dataset):
             )
             next_data_dict = self.load_from_idx(scene_change_pair)
             for k, v in data_dict.items():
-                start = 64000  # int(0.4 * self.max_len)
-                stop = 96000  # int(0.6 * self.max_len)
                 change_idx = (
-                    np.random.randint(start, stop)
+                    np.random.randint(64000, 96000)
                     if self.mode == "train"
                     else self.scene_change_idx[idx]
                 )
@@ -310,17 +430,27 @@ class AECOLS(OverlapSave, hk.Module):
         # select the analysis window
         self.analysis_window = jnp.ones(self.window_size)
 
+    def antialias(self, x):
+        x_td = self.ifft(x, axis=1).at[:, : -self.hop_size, :].set(0.0)
+        return self.fft(x_td, axis=1)
+
     def __ols_call__(self, u, d, metadata):
         w = self.get_filter(name="w")
+        y = (w * u).sum(0)
 
-        d_hat = (w * u).sum(0)
-        out = d[-1] - d_hat
+        out = d[-1] - y
+
+        y = self.antialias(y[None])
+        e = self.antialias(out[None])
+
         return {
             "out": out,
             "u": u,
             "d": d[-1, None],
-            "e": out[None],
-            "loss": jnp.vdot(out, out).real / out.size,
+            "e": e,
+            "y": y,
+            "grad": jnp.conj(u) * e,
+            "loss": jnp.vdot(e, e).real / 2,
         }
 
     @staticmethod
@@ -337,29 +467,69 @@ def _AECOLS_fwd(u, d, e, s, metadata=None, init_data=None, **kwargs):
     return gen_filter(u=u, d=d)
 
 
+class NOOPAECOLS(OverlapSave, hk.Module):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __ols_call__(self, u, d, metadata):
+        pass
+
+    def __call__(self, u, d):
+        shape = [self.n_frames, self.n_freq, self.n_in_chan]
+        w = hk.get_parameter("w", shape, init=metaaf.complex_utils.complex_zeros)
+        return {
+            "out": u[-1, None],
+            "u": w,
+            "d": w[-1, None],
+            "e": w[-1, None],
+            "y": w[-1, None],
+            "grad": w,
+            "loss": 0.0,
+        }
+
+    @staticmethod
+    def add_args(parent_parser):
+        return super(NOOPAECOLS, NOOPAECOLS).add_args(parent_parser)
+
+    @staticmethod
+    def grab_args(kwargs):
+        return super(NOOPAECOLS, NOOPAECOLS).grab_args(kwargs)
+
+
+def _NOOPAECOLS_fwd(u, d, e, s, metadata=None, init_data=None, **kwargs):
+    gen_filter = NOOPAECOLS(**kwargs)
+    return gen_filter(u=u, d=d)
+
+
 def aec_loss(out, data_samples, metadata):
     return out["loss"]
 
 
 def meta_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
-    return jnp.mean(jnp.abs(outputs) ** 2)
+    out = jnp.concatenate(outputs["out"], 0)
+    return jnp.mean(jnp.abs(out) ** 2)
 
 
 def meta_log_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.concatenate(outputs["out"], 0)
     EPS = 1e-8
-    return jnp.log(jnp.mean(jnp.abs(outputs) ** 2) + EPS)
+    return jnp.log(jnp.mean(jnp.abs(out) ** 2) + EPS)
 
 
 def neg_erle_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.reshape(
+        outputs["out"],
+        (outputs["out"].shape[0], -1, outputs["out"].shape[-1]),
+    )
     erle_scores = []
-    for i in range(len(outputs)):
+    for i in range(len(out)):
         min_len = min(
-            outputs.shape[1], data_samples["d"].shape[1], data_samples["e"].shape[1]
+            out.shape[1], data_samples["d"].shape[1], data_samples["e"].shape[1]
         )
 
         e = data_samples["e"][i, :min_len, 0]
         d = data_samples["d"][i, :min_len, 0]
-        y = outputs[i, :min_len, 0]
+        y = out[i, :min_len, 0]
 
         erle = metrics.erle(np.array(y), np.array(d), np.array(e))
         erle_scores.append(erle)
@@ -367,40 +537,32 @@ def neg_erle_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
 
 
 """
-Initial Ablation
-Meta-ID
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_c --unroll 16 --extra_signals ude --random_roll --outer_loss log_self_mse
+Meta-ID - no extra inputs
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_1024_rl_no_extra_inputs --unroll 16 --extra_signals none --random_roll --outer_loss log_self_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - extra inputs
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_no_inputs_c --unroll 16 --extra_signals none --random_roll --outer_loss log_self_mse
+Meta-ID - no acum outer
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_1024_rl_no_acum --unroll 16 --extra_signals udey --random_roll --outer_loss log_indep_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - acum outer
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_no_acum_wlog_c --unroll 16 --extra_signals ude --random_roll --outer_loss log_indep_mse
+Meta-ID - no log outer
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_1024_rl_no_log --unroll 16 --extra_signals udey --random_roll --outer_loss self_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - log outer
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_no_log_c --unroll 16 --extra_signals ude --random_roll --outer_loss self_mse
+Meta-ID - no log_acum outer
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_1024_rl_no_log_acum --unroll 16 --extra_signals udey --random_roll --outer_loss indep_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - log_acum outer
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_no_acum_c --unroll 16 --extra_signals ude --random_roll --outer_loss indep_mse
+Meta-ID - Unroll 1
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_2_1024_rl --unroll 2 --extra_signals udey --random_roll --outer_loss log_self_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - unroll = 1 (set to 2)
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_1_c --unroll 2 --extra_signals ude --random_roll --outer_loss log_self_mse
+Meta-ID - Unroll 8
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_8_1024_rl --unroll 8 --extra_signals udey --random_roll --outer_loss log_self_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - unroll = 8
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_8_c --unroll 8 --extra_signals ude --random_roll --outer_loss log_self_mse
+Meta-ID - Unroll 16
+python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_16_1024_rl --unroll 16 --extra_signals udey --random_roll --outer_loss log_self_mse --dataset linear --true_rir_len 1024
 
-Meta-ID - unroll = 32
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_32_c --unroll 32 --extra_signals ude --random_roll --outer_loss log_self_mse
+Meta-ID - Unroll 32
+aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_32_1024_rl --unroll 32 --extra_signals udey --random_roll --outer_loss log_self_mse --dataset linear --true_rir_len 1024
 
-AEC Experiments
-Meta-AEC Double Talk
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_dt_c --unroll 16 --extra_signals ude --random_roll --outer_loss log_self_mse --double_talk
-
-Meta-AEC Double Talk Scene Change
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_dt_sc_c --unroll 16 --extra_signals ude --random_roll --outer_loss log_self_mse --double_talk --scene_change
-
-Meta-AEC Double Talk Nonlinear
-python aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_dt_nl_c --unroll 16 --extra_signals ude --random_roll --outer_loss log_self_mse --double_talk --dataset nonlinear
+Meta-AEC Universal MDF
+python aec.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_combo_rl_4_1024_512 --unroll 16 --optimizer fgru --random_roll --outer_loss log_self_mse --double_talk --scene_change --dataset combo --random_level
 """
 if __name__ == "__main__":
     import pprint
@@ -408,16 +570,28 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--name", type=str, default="")
+    parser.add_argument("--true_rir_len", type=int, default=None)
     parser.add_argument("--double_talk", action="store_true")
     parser.add_argument("--scene_change", action="store_true")
     parser.add_argument("--random_roll", action="store_true")
+    parser.add_argument("--random_level", action="store_true")
+    parser.add_argument("--debug", action="store_true")
 
     parser.add_argument("--extra_signals", type=str, default="none")
     parser.add_argument("--outer_loss", type=str, default="self_mse")
+    parser.add_argument("--optimizer", type=str, default="gru")
     parser.add_argument("--dataset", type=str, default="linear")
     parser.add_argument("--b1", type=float, default=0.99)
 
-    parser = optimizer_gru.ElementWiseGRU.add_args(parser)
+    if parser.parse_known_args()[0].optimizer == "gru":
+        parser = optimizer_gru.ElementWiseGRU.add_args(parser)
+        gru_fwd = optimizer_gru._elementwise_gru_fwd
+        gru_grab_args = optimizer_gru.ElementWiseGRU.grab_args
+    elif parser.parse_known_args()[0].optimizer == "fgru":
+        parser = optimizer_fgru.TimeChanCoupledGRU.add_args(parser)
+        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
+
     parser = AECOLS.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
     kwargs = vars(parser.parse_args())
@@ -425,56 +599,77 @@ if __name__ == "__main__":
 
     if kwargs["dataset"] == "linear":
         aec_dataset = MSFTAECDataset_RIR
+        dset_kwargs = {
+            "double_talk": kwargs["double_talk"],
+            "scene_change": kwargs["scene_change"],
+            "random_roll": kwargs["random_roll"],
+            "random_level": kwargs["random_level"],
+            "rir_len": kwargs["true_rir_len"],
+        }
     elif kwargs["dataset"] == "nonlinear":
         aec_dataset = MSFTAECDataset
-
+        dset_kwargs = {
+            "double_talk": kwargs["double_talk"],
+            "scene_change": kwargs["scene_change"],
+            "random_roll": kwargs["random_roll"],
+            "random_level": kwargs["random_level"],
+        }
+    elif kwargs["dataset"] == "combo":
+        aec_dataset = ComboAECDataset
+        dset_kwargs = {
+            "random_roll": kwargs["random_roll"],
+            "random_level": kwargs["random_level"],
+        }
     # make the dataloders
     train_loader = NumpyLoader(
         aec_dataset(
             mode="train",
-            double_talk=kwargs["double_talk"],
-            scene_change=kwargs["scene_change"],
-            random_roll=kwargs["random_roll"],
             max_len=200000,
+            **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
         shuffle=True,
-        num_workers=8,
+        num_workers=12,
     )
     val_loader = NumpyLoader(
         aec_dataset(
             mode="val",
-            double_talk=kwargs["double_talk"],
-            scene_change=kwargs["scene_change"],
-            random_roll=kwargs["random_roll"],
+            **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
-        num_workers=4,
+        num_workers=2,
     )
     test_loader = NumpyLoader(
         aec_dataset(
             mode="test",
-            double_talk=kwargs["double_talk"],
-            scene_change=kwargs["scene_change"],
-            random_roll=kwargs["random_roll"],
+            **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
         num_workers=0,
     )
 
     # make the callbacks
-    callbacks = [
-        CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./taslp_ckpts"),
-        AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./taslp_outputs"),
-        WandBCallback(project="meta-aec", name=kwargs["name"], entity=None),
-    ]
+    callbacks = []
+    if not kwargs["debug"]:
+        callbacks = [
+            CheckpointCallback(name=kwargs["name"], ckpt_base_dir="./meta_ckpts"),
+            AudioLoggerCallback(name=kwargs["name"], outputs_base_dir="./meta_outputs"),
+            WandBCallback(project="meta-aec", name=kwargs["name"], entity=None),
+        ]
 
     if kwargs["extra_signals"] == "none":
         init_optimizer = optimizer_gru.init_optimizer
         make_mapped_optmizer = optimizer_gru.make_mapped_optmizer
-    elif kwargs["extra_signals"] == "ude":
+    elif kwargs["extra_signals"] == "udey":
         init_optimizer = optimizer_gru.init_optimizer_all_data
         make_mapped_optmizer = optimizer_gru.make_mapped_optmizer_all_data
+
+    if kwargs["optimizer"] == "fgru":
+        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        init_optimizer = optimizer_fgru.init_optimizer_all_data
+        make_mapped_optmizer = optimizer_fgru.make_mapped_optmizer_all_data
+        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
+        kwargs["outsize"] = kwargs["n_in_chan"] * kwargs["n_frames"]
 
     if kwargs["outer_loss"] == "self_mse":
         outer_train_loss = meta_mse_loss
@@ -492,8 +687,8 @@ if __name__ == "__main__":
         train_loader=train_loader,
         val_loader=val_loader,
         test_loader=test_loader,
-        _optimizer_fwd=optimizer_gru._elementwise_gru_fwd,
-        optimizer_kwargs=optimizer_gru.ElementWiseGRU.grab_args(kwargs),
+        _optimizer_fwd=gru_fwd,
+        optimizer_kwargs=gru_grab_args(kwargs),
         meta_train_loss=outer_train_loss,
         meta_val_loss=neg_erle_val_loss,
         init_optimizer=init_optimizer,

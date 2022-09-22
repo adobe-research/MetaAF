@@ -10,8 +10,12 @@ import numpy as np
 import metaaf
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
+import metaaf.optimizer_gru as gru
 import metaaf.optimizer_fgru as fgru
-
+import metaaf.optimizer_lms as lms
+import metaaf.optimizer_nlms as nlms
+import metaaf.optimizer_rmsprop as rms
+import metaaf.optimizer_rls as rls
 
 import zoo.wpe.wpe as wpe
 from zoo import metrics
@@ -40,7 +44,7 @@ def get_all_metrics(clean, enhanced, mix, fs=16000):
     return res
 
 
-def get_system_ckpt(ckpt_dir, e, model_type="egru", verbose=True):
+def get_system_ckpt(ckpt_dir, e, noop=False, verbose=True):
     ckpt_loc = os.path.join(ckpt_dir, f"epoch_{e}.pkl")
     with open(ckpt_loc, "rb") as f:
         outer_learnable = pickle.load(f)
@@ -66,15 +70,47 @@ def get_system_ckpt(ckpt_dir, e, model_type="egru", verbose=True):
     )
 
     # switch case to find the right optimizer functions
-    if model_type == "fgru":
+    if kwargs["optimizer"] == "egru":
+        optimizer_kwargs = gru.ElementWiseGRU.grab_args(kwargs)
+        _optimizer_fwd = gru._elementwise_gru_fwd
+        init_optimizer = gru.init_optimizer_all_data
+        make_mapped_optmizer = gru.make_mapped_optmizer_all_data
+
+    elif kwargs["optimizer"] == "fgru":
         optimizer_kwargs = fgru.TimeChanCoupledGRU.grab_args(kwargs)
         _optimizer_fwd = fgru._timechancoupled_gru_fwd
         init_optimizer = fgru.init_optimizer_all_data
         make_mapped_optmizer = fgru.make_mapped_optmizer_all_data
 
+    elif kwargs["optimizer"] == "lms":
+        optimizer_kwargs = lms.grab_args(kwargs)
+        _optimizer_fwd = lms._fwd
+        init_optimizer = lms.init_optimizer
+        make_mapped_optmizer = lms.make_mapped_optmizer
+
+    elif kwargs["optimizer"] == "nlms":
+        optimizer_kwargs = nlms.grab_args(kwargs)
+        _optimizer_fwd = nlms._fwd
+        init_optimizer = nlms.init_optimizer
+        make_mapped_optmizer = nlms.make_mapped_optmizer
+
+    elif kwargs["optimizer"] == "rms":
+        optimizer_kwargs = rms.grab_args(kwargs)
+        _optimizer_fwd = rms._fwd
+        init_optimizer = rms.init_optimizer
+        make_mapped_optmizer = rms.make_mapped_optmizer
+
+    elif kwargs["optimizer"] == "rls":
+        optimizer_kwargs = rls.grab_args(kwargs)
+        _optimizer_fwd = rls._fwd
+        init_optimizer = rls.init_optimizer
+        make_mapped_optmizer = rls.make_mapped_optmizer
+
     system = MetaAFTrainer(
-        _filter_fwd=wpe._WPEOLA_fwd,
-        filter_kwargs=wpe.WPEOLA.grab_args(kwargs),
+        _filter_fwd=wpe._NOOPWPEOLA_fwd if noop else wpe._WPEOLA_fwd,
+        filter_kwargs=wpe.NOOPWPEOLA.grab_args(kwargs)
+        if noop
+        else wpe.WPEOLA.grab_args(kwargs),
         filter_loss=wpe.dereverb_loss,
         optimizer_kwargs=optimizer_kwargs,
         train_loader=train_loader,
@@ -98,10 +134,9 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--date", type=str, default="")
     parser.add_argument("--epoch", type=int, default=0)
-    parser.add_argument("--model_type", type=str, default="egru")
-    parser.add_argument("--ckpt_dir", type=str, default="./taslp_ckpts")
+    parser.add_argument("--ckpt_dir", type=str, default="./meta_ckpts")
 
-    parser.add_argument("--out_dir", type=str, default="./taslp_outputs")
+    parser.add_argument("--out_dir", type=str, default="./meta_outputs")
     parser.add_argument("--save_outputs", action="store_true")
     parser.add_argument("--save_metrics", action="store_true")
     parser.add_argument("--scene_change", action="store_true")
@@ -110,13 +145,13 @@ if __name__ == "__main__":
     pprint.pprint(eval_kwargs)
 
     # build the checkpoint path
-    ckpt_loc = os.path.join(eval_kwargs["ckpt_dir"], eval_kwargs["name"], eval_kwargs["date"])
+    ckpt_loc = os.path.join(
+        eval_kwargs["ckpt_dir"], eval_kwargs["name"], eval_kwargs["date"]
+    )
     epoch = int(eval_kwargs["epoch"])
 
     # load the checkpoint and kwargs file
-    system, kwargs, outer_learnable = get_system_ckpt(
-        ckpt_loc, epoch, model_type=eval_kwargs["model_type"]
-    )
+    system, kwargs, outer_learnable = get_system_ckpt(ckpt_loc, epoch)
     fit_infer = system.make_fit_infer(outer_learnable=outer_learnable)
     fs = 16000
 

@@ -151,6 +151,7 @@ def init_optimizer_all_data(filter_p, batch_data, optimizer_dict, key):
         single_p,
         single_p,
         single_p,
+        single_p,
         **optimizer_dict["optimizer_kwargs"],
     )
 
@@ -168,9 +169,15 @@ def make_mapped_optmizer_all_data(
     def update(i, features, jax_state):
         filter_p, state = jax_state
 
+        grad = (
+            features.cur_outputs["grad"]
+            if "grad" in features.cur_outputs
+            else jnp.conj(features.filter_features)
+        )
         u = features.cur_outputs["u"]
         d = jnp.broadcast_to(features.cur_outputs["d"], u.shape)
         e = jnp.broadcast_to(features.cur_outputs["e"], u.shape)
+        y = jnp.broadcast_to(features.cur_outputs["y"], u.shape)
 
         update, state = optimizer.apply(
             optimizer_p,
@@ -180,6 +187,7 @@ def make_mapped_optmizer_all_data(
             u,
             d,
             e,
+            y,
             **optimizer_kwargs,
         )
 
