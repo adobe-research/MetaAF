@@ -1,6 +1,6 @@
 # !/usr/bin/env python
 # -*- coding: utf-8 -*-
-'''Version info'''
+"""Version info"""
 
-short_version = '0.0'
-version = '0.0.1'
+short_version = "1.0"
+version = "1.0.0"
