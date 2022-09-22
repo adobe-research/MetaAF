@@ -256,7 +256,7 @@ That is it! For more advanced options check out the zoo, where we demonstrate ca
 
 ## Meta-AF Zoo
 
-The [Meta-AF Zoo](zoo/README.md) contains implementations for system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer all in the `metaaf` framework. You can find intructions for how to run, evaluate, and setup those models [here](zoo/README.md). For trained weights, and tuned baselines, please see the tagged release zip file [here](https://github.com/adobe-research/MetaAF/releases/tag/v0.1.0).
+The [Meta-AF Zoo](zoo/README.md) contains implementations for system identification, acoustic echo cancellation, equalization, weighted predection error dereverberation, and a generalized sidelobe canceller beamformer all in the `metaaf` framework. You can find intructions for how to run, evaluate, and setup those models [here](zoo/README.md). For trained weights, and tuned baselines, please see the tagged release zip file [here](https://github.com/adobe-research/MetaAF/releases/tag/v1.0.0).
 
 ## License
 

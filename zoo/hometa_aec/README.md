@@ -118,7 +118,7 @@ outputs for `res` training and evaluation.
 
 ### Download Checkpoints
 
-You can download the checkpoints for Meta-AEC models and DNN speech enhancers in fig. 4 of the paper with [this link](https://drive.google.com/file/d/1eA1_ZMVLPkeOolM3Zf2H2JE2mAgM2lsH/view?usp=sharing). Unzip and make sure the folders `aec_diag`, `aec_banded9`, `aec_banded3`, `res_diag`, `res_banded9` and `res_banded3` are under the `/hometa_aec/ckpts` folder.
+You can download the checkpoints for Meta-AEC models and DNN speech enhancers in fig. 4 of the paper from the tagged release [here](https://github.com/adobe-research/MetaAF/releases/tag/v1.0.0). Unzip and make sure the folders `aec_diag`, `aec_banded9`, `aec_banded3`, `res_diag`, `res_banded9` and `res_banded3` are under the `/hometa_aec/ckpts` folder.
 
 ### Run Checkpoints
 
