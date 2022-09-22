@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="metaaf",
-    version="0.0.1",
+    version="1.0.0",
     description="metaaf",
     author="Jonah Casebeer, Nicholas J. Bryan, Paris Smaragdis",
     author_email="no-reply@adobe.com",
