@@ -82,7 +82,7 @@ pip install speexdsp
 To use a pre-trained checkpoint, download and unzip the tagged release. It contains model weights for all five tasks. Below is an example of using an AEC checkpoint from the release. You can find the `--date` and `--epoch` arguments by browsing the release file structure. Additional task-specific arguments can be found in the `<task>_eval.py` code.
 
 ```{bash}
-python aec_eval.py --name meta_aec_16_combo_rl_4_1024_512 --date 2022_08_29_01_10_31 --epoch 110 --ckpt_dir <path to ckpts folder>/aec
+python aec_eval.py --name meta_aec_16_combo_rl_4_1024_512_r2 --date 2022_10_19_23_43_22 --epoch 110 --ckpt_dir <path to ckpts folder>/aec
 ```
 
 ## Running a Zoo Model
@@ -90,7 +90,7 @@ python aec_eval.py --name meta_aec_16_combo_rl_4_1024_512 --date 2022_08_29_01_1
 To train a model, navigate to the task directory and run `<task>.py` with the desired arguments. You can find the commands we used to run all our experiments in each `<task>.py` file. For example, to train an AEC model with a 1024 window, 512 hop, 4 blocks, on the largest combo dataset using a single-gpu with batch size 32 do:
 
 ```{bash}
-python aec.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_demo --unroll 16 --optimizer fgru --random_roll --outer_loss log_self_mse --dataset combo --random_level
+python aec.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_demo --unroll 16 --optimizer fgru --random_roll --random_level --outer_loss log_self_mse --double_talk --scene_change --dataset combo --val_loss serle
 ```
 
 You can then run universal eval on that model and save the metrics and outputs by running
@@ -101,7 +101,7 @@ python aec_eval.py --name meta_aec_demo --date <date string> --epoch <epoch numb
 
 where you replace `name/date/epoch` with the desired values. If you use one of the multichannel models, make sure to tran with the `fgru` optimizer. If you want to run a baseline model, simply point to the correspoinding checkpiont with `name/date/epoch`.
 
-To run a baseline model, you need to have a checkpoint. You can make one by running baseline tuning. In the case of AEC and an RLS optimizer, you can produced a tuned checkpoint in the same format as the Meta-AEC model via:
+To run a baseline model, you need to have a checkpoint. You can make one by running baseline tuning. In the case of AEC and an NLMS optimizer, you can produced a tuned checkpoint in the same format as the Meta-AEC model via:
 
 ```{bash}
 python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_nlms_mdf --optimizer nlms --random_level --random_roll --dataset combo

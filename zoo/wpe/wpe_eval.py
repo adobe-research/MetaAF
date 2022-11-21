@@ -71,14 +71,14 @@ def get_system_ckpt(ckpt_dir, e, noop=False, verbose=True):
 
     # switch case to find the right optimizer functions
     if kwargs["optimizer"] == "egru":
-        optimizer_kwargs = gru.ElementWiseGRU.grab_args(kwargs)
-        _optimizer_fwd = gru._elementwise_gru_fwd
+        optimizer_kwargs = gru.EGRU.grab_args(kwargs)
+        _optimizer_fwd = gru._fwd
         init_optimizer = gru.init_optimizer_all_data
         make_mapped_optmizer = gru.make_mapped_optmizer_all_data
 
     elif kwargs["optimizer"] == "fgru":
-        optimizer_kwargs = fgru.TimeChanCoupledGRU.grab_args(kwargs)
-        _optimizer_fwd = fgru._timechancoupled_gru_fwd
+        optimizer_kwargs = fgru.FGRU.grab_args(kwargs)
+        _optimizer_fwd = fgru._fwd
         init_optimizer = fgru.init_optimizer_all_data
         make_mapped_optmizer = fgru.make_mapped_optmizer_all_data
 

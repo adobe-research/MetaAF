@@ -480,20 +480,11 @@ class GSCOLA(OverlapAdd, hk.Module):
             "exp_avg",
             "cov_init",
             "cov_update",
+            "antialias",
+            "steer_method",
+            "cov_update_regularizer",
         ]
         class_keys = {k: kwargs[k] for k in keys}
-
-        # post hoc add the steering
-        if "steer_method" in kwargs:
-            class_keys["steer_method"] = kwargs["steer_method"]
-        else:
-            class_keys["steer_method"] = "rank1"
-
-        if "cov_update_regularizer" in kwargs:
-            class_keys["cov_update_regularizer"] = kwargs["cov_update_regularizer"]
-        else:
-            class_keys["cov_update_regularizer"] = 0.0
-
         class_keys.update(super(GSCOLA, GSCOLA).grab_args(kwargs))
         return class_keys
 
@@ -574,7 +565,9 @@ def gsc_loss(out, data_samples, metadata):
     return out["loss"]
 
 
-def meta_log_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+def meta_log_mse_loss(
+    losses, outputs, data_samples, metadata, outer_index, outer_learnable
+):
     out = jnp.concatenate(outputs["out"], 0)
     EPS = 1e-8
     return jnp.log(jnp.mean(jnp.abs(out) ** 2) + EPS)
@@ -603,18 +596,8 @@ def make_neg_sisdr_val(window_size, hop_size):
 
 
 """
-Diffuse Interference
-python gsc.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_gsc_diffuse --unroll 16 --cov_init identity --cov_update oracle --exp_avg .9 --steer_method eigh --cov_update_regularizer 0.01
-
-Directional Interference
-python gsc.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_gsc_direct --unroll 16 --cov_init identity --cov_update oracle --exp_avg .9 --steer_method eigh --cov_update_regularizer 0.01 --static_speech_interfere
-
 Combo Interference
-python gsc.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_gsc_combo --unroll 16 --cov_init identity --cov_update oracle --exp_avg .9 --steer_method eigh --cov_update_regularizer 0.01 --combo_dataset --optimizer fgru
-
-python gsc.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_gsc_combo_aa --unroll 16 --cov_init identity --cov_update oracle --exp_avg .9 --steer_method eigh --cov_update_regularizer 0.01 --combo_dataset --optimizer fgru --antialias
-
-python gsc.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 5 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_gsc_combo_5 --unroll 16 --cov_init identity --cov_update oracle --exp_avg .9 --steer_method eigh --cov_update_regularizer 0.01 --combo_dataset --optimizer fgru --remove_mic_2
+python gsc.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_gsc_combo_aa_default_75_r2 --unroll 16 --cov_init identity --cov_update oracle --exp_avg .75 --combo_dataset --optimizer fgru --antialias
 """
 if __name__ == "__main__":
     import pprint
@@ -629,17 +612,17 @@ if __name__ == "__main__":
     parser.add_argument("--outer_loss", type=str, default="self_mse")
 
     if parser.parse_known_args()[0].optimizer == "gru":
-        parser = optimizer_gru.ElementWiseGRU.add_args(parser)
-        gru_fwd = optimizer_gru._elementwise_gru_fwd
+        parser = optimizer_gru.EGRU.add_args(parser)
+        gru_fwd = optimizer_gru._fwd
         gru_init = optimizer_gru.init_optimizer_all_data
         gru_map = optimizer_gru.make_mapped_optmizer_all_data
-        gru_grab_args = optimizer_gru.ElementWiseGRU.grab_args
+        gru_grab_args = optimizer_gru.EGRU.grab_args
     elif parser.parse_known_args()[0].optimizer == "fgru":
-        parser = optimizer_fgru.TimeChanCoupledGRU.add_args(parser)
-        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        parser = optimizer_fgru.FGRU.add_args(parser)
+        gru_fwd = optimizer_fgru._fwd
         gru_init = optimizer_fgru.init_optimizer_all_data
         gru_map = optimizer_fgru.make_mapped_optmizer_all_data
-        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
+        gru_grab_args = optimizer_fgru.FGRU.grab_args
 
     parser = GSCOLA.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
@@ -670,7 +653,8 @@ if __name__ == "__main__":
         batch_size=kwargs["batch_size"],
         shuffle=True,
         drop_last=True,
-        num_workers=8,
+        num_workers=10,
+        persistent_workers=True,
     )
 
     val_loader = NumpyLoader(
@@ -682,6 +666,7 @@ if __name__ == "__main__":
         batch_size=kwargs["batch_size"],
         drop_last=True,
         num_workers=2,
+        persistent_workers=True,
     )
 
     test_loader = NumpyLoader(

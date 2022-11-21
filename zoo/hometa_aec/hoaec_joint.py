@@ -331,7 +331,7 @@ def make_meta_sup_mse_loss(window_size, hop_size, time_domain, freq_domain):
     buffer_size = window_size - hop_size
     assert time_domain or freq_domain
 
-    def outer_meta_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    def outer_meta_mse_loss(losses, outputs, data_samples, metadata, outer_index, outer_learnable):
         out = jnp.concatenate(outputs["out"], 0)
 
         print("check out shape")

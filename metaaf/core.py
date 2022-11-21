@@ -218,7 +218,12 @@ def make_inner_loop(
 
         # this is the meta loss function
         final_loss = meta_loss(
-            all_losses, out, batch_signals_unroll, batch_metadata, outer_learnable
+            all_losses,
+            out,
+            batch_signals_unroll,
+            batch_metadata,
+            outer_index,
+            outer_learnable,
         )
 
         return (
@@ -476,7 +481,7 @@ def make_online_optimizer(
 def make_fit_single(
     outer_learnable,
     outer_fixed,
-    meta_loss,
+    infer_meta_loss,
     make_mapped_optmizer,
     get_filter_featues,
     hop_size,
@@ -486,7 +491,7 @@ def make_fit_single(
     Args:
         outer_learnable (_type_): All outer-learned parameters
         outer_fixed (_type_): All outer-learned kwargs
-        meta_loss (_type_): The meta-loss
+        infer_meta_loss (_type_): The inference time meta-loss -- not vectorized
         make_mapped_optmizer (_type_): Function to make mapped optimizer
         get_filter_featues (_type_): Filter feature extraction function, typically grad
         hop_size (_type_): Filter hop size in samples
@@ -556,7 +561,7 @@ def make_fit_single(
         )
 
         all_losses = jnp.array(all_losses).T
-        final_loss = meta_loss(
+        final_loss = infer_meta_loss(
             all_losses, out, batch["signals"], batch["metadata"], outer_learnable
         )
 

@@ -17,8 +17,8 @@ from metaaf.core import (
 )
 from metaaf.filter import make_inner_grad
 from metaaf.optimizer_gru import (
-    _elementwise_gru_fwd,
-    ElementWiseGRU,
+    _fwd,
+    EGRU,
     init_optimizer,
     make_mapped_optmizer,
 )
@@ -38,8 +38,8 @@ class MetaAFTrainer:
         train_loader,
         val_loader,
         test_loader,
-        _optimizer_fwd=_elementwise_gru_fwd,
-        optimizer_kwargs=ElementWiseGRU.default_args(),
+        _optimizer_fwd=_fwd,
+        optimizer_kwargs=EGRU.default_args(),
         init_optimizer=init_optimizer,
         make_mapped_optmizer=make_mapped_optmizer,
         make_get_filter_featues=make_inner_grad,
@@ -325,7 +325,7 @@ class MetaAFTrainer:
         outer_learnable=None,
         key=None,
     ):
-        """The actualy train function. Manages the whole metr-training procedure
+        """The actual train function. Manages the whole meta-training procedure
 
         Args:
             unroll (int, optional): Integer unroll. Defaults to 16.
@@ -420,7 +420,11 @@ class MetaAFTrainer:
 
                 # update the progress bar
                 pbar.set_description(
-                    "Epoch Loss:{:.5f}".format(train_loop_losses.mean()), refresh=True
+                    "Epoch Loss:{:.5f} -- {:.5f}% NAN".format(
+                        np.nanmean(train_loop_losses),
+                        np.isnan(train_loop_losses).mean(),
+                    ),
+                    refresh=True,
                 )
 
                 # collect outer learned parameters
@@ -430,7 +434,7 @@ class MetaAFTrainer:
                 if epoch % self.val_period == 0:
                     key, subkey = jax.random.split(key)
                     val_loop_losses = self.val_loop(outer_learnable, key=subkey)
-                    epoch_val_losses.append(val_loop_losses.mean())
+                    epoch_val_losses.append(np.nanmean(val_loop_losses))
 
                     # only step early stop and lr reduce if this val counts
                     first_val_idx = 0 if self.count_first_val else 1
@@ -553,7 +557,11 @@ class MetaAFTrainer:
             train_loop_losses.append(train_step_losses.mean())
 
             pbar.set_description(
-                "Batch Loss:{:.5f}".format(train_step_losses.mean()), refresh=True
+                "Batch Loss:{:.5f} -- {:.5f}% NAN".format(
+                    np.nanmean(train_step_losses),
+                    100 * np.isnan(train_step_losses).mean(),
+                ),
+                refresh=True,
             )
 
             self.cur_batch += 1
@@ -572,7 +580,14 @@ class MetaAFTrainer:
         return np.array(train_loop_losses), meta_opt_s
 
     def train_step(
-        self, meta_opt_s, filter_p, filter_s, preprocess_s, postprocess_s, batch, key,
+        self,
+        meta_opt_s,
+        filter_p,
+        filter_s,
+        preprocess_s,
+        postprocess_s,
+        batch,
+        key,
     ):
         if self.get_filter_featues is None:
             self.get_filter_featues = self.make_get_filter_featues(
@@ -617,12 +632,13 @@ class MetaAFTrainer:
             n_val_increases = 0
         return n_val_increases
 
-    def val_loop(self, outer_learnable=None, key=None):
+    def val_loop(self, outer_learnable=None, key=None, early_exit_index=None):
         """Can be called to run validation.
 
         Args:
             outer_learnable (_type_, optional): Outer learnable parameters returned by train or stored internally. Defaults to None.
             key (_type_, optional): JAX PRNGKey. Defaults to None.
+            early_exit_index (_type, optional): Optional batch index to early exit validation at.
 
         Returns:
             _type_: Returns the mean loss but also calls the callbacks.
@@ -644,7 +660,10 @@ class MetaAFTrainer:
         for (batch_idx, batch) in enumerate(self.val_loader):
             key, subkey = jax.random.split(key)
             out, aux = self.infer(
-                batch, outer_learnable=outer_learnable, fit_infer=fit_infer, key=subkey,
+                batch,
+                outer_learnable=outer_learnable,
+                fit_infer=fit_infer,
+                key=subkey,
             )
 
             # call backs on end of a val batch
@@ -656,6 +675,9 @@ class MetaAFTrainer:
             loss = aux[0]
             loop_loss.append(loss)
 
+            if early_exit_index is not None and batch_idx > early_exit_index:
+                break
+
         loop_loss = np.array(loop_loss)
 
         # call backs at end of val
@@ -663,12 +685,13 @@ class MetaAFTrainer:
 
         return loop_loss
 
-    def test_loop(self, outer_learnable=None, key=None):
+    def test_loop(self, outer_learnable=None, key=None, early_exit_index=None):
         """Can be called to run testing.
 
         Args:
             outer_learnable (_type_, optional): Outer learnable parameters returned by train or stored internally. Defaults to None.
             key (_type_, optional): JAX PRNGKey. Defaults to None.
+            early_exit_index (_type, optional): Optional batch index to early exit validation at.
 
         Returns:
             _type_: Returns the mean loss but also calls the callbacks.
@@ -691,7 +714,10 @@ class MetaAFTrainer:
         for (batch_idx, batch) in enumerate(self.test_loader):
             key, subkey = jax.random.split(key)
             out, aux = self.infer(
-                batch, outer_learnable=outer_learnable, fit_infer=fit_infer, key=subkey,
+                batch,
+                outer_learnable=outer_learnable,
+                fit_infer=fit_infer,
+                key=subkey,
             )
             # call backs on end of a test batch
             [
@@ -701,6 +727,9 @@ class MetaAFTrainer:
 
             loss = aux[0]
             loop_loss.append(loss)
+
+            if early_exit_index is not None and batch_idx > early_exit_index:
+                break
 
         loop_loss = np.array(loop_loss)
 
@@ -727,7 +756,7 @@ class MetaAFTrainer:
         return make_fit_single(
             outer_learnable=outer_learnable,
             outer_fixed=self.outer_fixed,
-            meta_loss=self.meta_val_loss,
+            infer_meta_loss=self.meta_val_loss,
             make_mapped_optmizer=self.make_mapped_optmizer,
             get_filter_featues=get_filter_featues,
             hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],

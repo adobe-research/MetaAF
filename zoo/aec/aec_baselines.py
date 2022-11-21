@@ -26,6 +26,17 @@ python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_c
 
 python aec_baselines.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name id_rls --optimizer rls --optimize_conjugate --random_roll --dataset linear --true_rir_len 1024
 
+MSFT AEC Challenge AEC
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_msft_lms_mdf --optimizer lms --double_talk --random_level --random_roll --dataset nonlinear
+
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_msft_nlms_mdf --optimizer nlms --double_talk --random_level --random_roll --dataset nonlinear
+
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_msft_rms_mdf --optimizer rms --double_talk --random_level --random_roll --dataset nonlinear
+
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_msft_rls_mdf --optimizer rls --optimize_conjugate --double_talk --random_level --random_roll --dataset nonlinear
+
+python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_msft_kf_mdf --optimizer kf --double_talk --random_level --random_roll --dataset nonlinear
+
 Universal AEC
 python aec_baselines.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --name aec_combo_lms_mdf --optimizer lms --random_level --random_roll --dataset combo
 
@@ -103,6 +114,8 @@ if __name__ == "__main__":
             **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
+        shuffle=True,
+        persistent_workers=True,
         num_workers=4,
     )
     test_loader = NumpyLoader(
@@ -123,7 +136,7 @@ if __name__ == "__main__":
         test_loader=test_loader,
         _optimizer_fwd=optimizer_pkg._fwd,
         optimizer_kwargs=optimizer_pkg.grab_args(kwargs),
-        meta_val_loss=aec.neg_erle_val_loss,
+        meta_val_loss=aec.neg_serle_val_loss,
         init_optimizer=optimizer_pkg.init_optimizer,
         make_mapped_optmizer=optimizer_pkg.make_mapped_optmizer,
         kwargs=kwargs,
@@ -148,7 +161,7 @@ if __name__ == "__main__":
     for config in tqdm.tqdm(all_configs):
         config_dict = dict(zip(list(tuning_options.keys()), config))
         outer_learned["optimizer_p"].update(config_dict)
-        val_loss = system.val_loop(outer_learnable=outer_learned)
+        val_loss = system.val_loop(outer_learnable=outer_learned, early_exit_index=20)
 
         mean_val_scores.append(np.nanmean(val_loss))
 

@@ -46,6 +46,7 @@ class NumpyLoader(DataLoader):
         timeout=0,
         worker_init_fn=None,
         collate_fn=numpy_collate,
+        persistent_workers=False,
     ):
         super(self.__class__, self).__init__(
             dataset,
@@ -59,4 +60,5 @@ class NumpyLoader(DataLoader):
             drop_last=drop_last,
             timeout=timeout,
             worker_init_fn=worker_init_fn,
+            persistent_workers=persistent_workers,
         )

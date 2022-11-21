@@ -27,17 +27,16 @@ def default_args():
 
 def get_tuning_options(**kwargs):
     return {
-        "init_scale": [1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3],
+        "init_scale": jnp.logspace(-2, 2, 10),
         "forget_factor": [
             0.5,
-            0.6,
             0.7,
+            0.75,
             0.8,
             0.9,
             0.99,
-            0.999,
-            0.9999,
         ],
+        "regularization": jnp.logspace(-5, 0, 3),
     }
 
 
@@ -51,6 +50,7 @@ def init_optimizer(filter_p, batch_data, optimizer_dict, key):
     return {
         "forget_factor": 0.999,
         "init_scale": 0.01,
+        "regularization": 1e-4,
     }
 
 
@@ -68,7 +68,7 @@ def freq_unflatten(x, orig_shape):
     return jnp.swapaxes(x_unflatten, 0, 1)
 
 
-def update_kalman_gain(u, P, forget_factor):
+def update_kalman_gain(u, P, forget_factor, regularization):
     # Freq. x N
     P_u = jnp.einsum("fmn,fn->fm", P, u)
 
@@ -77,7 +77,7 @@ def update_kalman_gain(u, P, forget_factor):
 
     # dont divide by zero
     denom = forget_factor + u_P_u
-    denom = jnp.maximum(denom, 1e-4 * jnp.max(denom))
+    denom = jnp.maximum(denom, regularization * jnp.max(denom))
     return P_u / denom[:, None]
 
 
@@ -90,10 +90,11 @@ def update_covariance(u, P, K, forget_factor):
 
 def get_update(K, e):
     # assume only one channel output and index it
-    return jnp.einsum("fm,fn->fmn", K, e.conj())[..., 0]
+    update = jnp.einsum("fm,fn->fmn", K, e.conj())[..., 0]
+    return update
 
 
-def rls_step(P, u, e, forget_factor, normalize):
+def rls_step(P, u, e, forget_factor, regularization, normalize):
     # convert all inputs to flat form
     # e is already Freq. x Channels
     u_flat = freq_flatten(u)
@@ -105,7 +106,7 @@ def rls_step(P, u, e, forget_factor, normalize):
         power = forget_factor
 
     # Compute the gain
-    K = update_kalman_gain(u_flat, P, power)
+    K = update_kalman_gain(u_flat, P, power, regularization)
 
     # Compute and update covariance
     P = update_covariance(u_flat, P, K, forget_factor)
@@ -122,6 +123,9 @@ def rls_step(P, u, e, forget_factor, normalize):
 def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs):
     forget_factor = optimizer_p["forget_factor"]
     init_scale = optimizer_p["init_scale"]
+    regularization = (
+        optimizer_p["regularization"] if "regularization" in optimizer_p else 1e-4
+    )
 
     normalize = optimizer_kwargs["nrls"]
     optimize_conjugate = optimizer_kwargs["optimize_conjugate"]
@@ -145,14 +149,12 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
         e = features.cur_outputs["e"][0]
         u = features.cur_outputs["u"]
 
-        if optimize_conjugate:
-            w = w.conj()
-
-        w_update, P = rls_step(P, u, e, forget_factor, normalize)
-        w = w + w_update
+        w_update, P = rls_step(P, u, e, forget_factor, regularization, normalize)
 
         if optimize_conjugate:
-            w = w.conj()
+            w = w + w_update.conj()
+        else:
+            w = w + w_update
 
         return (w, P)
 

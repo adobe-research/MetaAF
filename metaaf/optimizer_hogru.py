@@ -21,7 +21,7 @@ def make_deep_initial_state(params, **kwargs):
     return tuple(single_layer_initial_state() for _ in range(n_layers))
 
 
-class HOElementWiseGRU(hk.Module):
+class HO_EGRU(hk.Module):
     def __init__(
         self,
         h_size,
@@ -32,7 +32,7 @@ class HOElementWiseGRU(hk.Module):
         group_mode="block",
         group_size=5,
         input_transform="log1p",
-        name="HOElementWiseGRU",
+        name="ElementWiseGRU",
         **kwargs
     ):
 
@@ -229,8 +229,8 @@ class HOElementWiseGRU(hk.Module):
         }
 
 
-def _elementwise_hogru_fwd(x, h, *extra_inputs, **kwargs):
-    optimizer = HOElementWiseGRU(**kwargs)
+def _fwd(x, h, *extra_inputs, **kwargs):
+    optimizer = HO_EGRU(**kwargs)
     return optimizer(x, h, extra_inputs)
 
 
@@ -301,6 +301,24 @@ def init_optimizer(optimizee_p, batch_data, optimizer_dict, key):
     return optimizer_p
 
 
+def init_optimizer_u_data(optimizee_p, batch_data, optimizer_dict, key):
+    single_p = jax.tree_util.tree_leaves(optimizee_p)[0]
+
+    # use that parameter to make an optimizer state
+    h = make_deep_initial_state(single_p, **optimizer_dict["optimizer_kwargs"])
+
+    # now init the optimizer
+    optimizer_p = optimizer_dict["optimizer"].init(
+        key,
+        single_p,
+        h,
+        single_p,
+        **optimizer_dict["optimizer_kwargs"],
+    )
+
+    return optimizer_p
+
+
 def init_optimizer_all_data(optimizee_p, batch_data, optimizer_dict, key):
     single_p = jax.tree_util.tree_leaves(optimizee_p)[0]
 
@@ -351,6 +369,37 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
             None,
             jnp.conj(features.optimizee_features),
             state,
+            **optimizer_kwargs,
+        )
+
+        return (optimizee_p + update, state)
+
+    def get_params(jax_state):
+        # state was (parameters, state)
+        return jax_state[0]
+
+    return init, update, get_params
+
+
+@optimizers.optimizer
+def make_mapped_optmizer_u_data(
+    optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs
+):
+    def init(optimizee_p):
+        state = make_deep_initial_state(optimizee_p, **optimizer_kwargs)
+        return (optimizee_p, state)
+
+    def update(i, features, jax_state):
+        optimizee_p, state = jax_state
+
+        u = features.cur_outputs["u"]
+
+        update, state = optimizer.apply(
+            optimizer_p,
+            None,
+            jnp.conj(features.optimizee_features),
+            state,
+            u,
             **optimizer_kwargs,
         )
 

@@ -18,13 +18,13 @@ import zoo.gsc.gsc as gsc
 
 """
 Sample command to tune a baseline:
-python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_rls_combo_default_aa --optimizer rls --combo_dataset --antialias
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_rls_combo_default_aa --optimizer rls --combo_dataset --antialias --exp_avg .75
 
-python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_nlms_combo_default_aa --optimizer nlms --combo_dataset --antialias
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_nlms_combo_default_aa --optimizer nlms --combo_dataset --antialias --exp_avg .75
 
-python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_rms_combo_default_aa --optimizer rms --combo_dataset --antialias
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_rms_combo_default_aa --optimizer rms --combo_dataset --antialias --exp_avg .75
 
-python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_lms_combo_default_aa --optimizer lms --combo_dataset --antialias
+python gsc_baselines.py --n_frames 1 --window_size 1024 --hop_size 512 --n_in_chan 6 --n_out_chan 1 --is_real --batch_size 32 --total_epochs 0 --n_devices 1 --cov_init identity --cov_update oracle --name gsc_lms_combo_default_aa --optimizer lms --combo_dataset --antialias --exp_avg .75
 """
 if __name__ == "__main__":
     import pprint
@@ -69,7 +69,7 @@ if __name__ == "__main__":
             mode="val",
             n_mics=kwargs["n_in_chan"],
             signal_len=128000,
-            max_n_files=160,
+            max_n_files=128,
         ),
         batch_size=kwargs["batch_size"],
         num_workers=4,

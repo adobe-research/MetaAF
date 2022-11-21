@@ -106,7 +106,7 @@ if __name__ == "__main__":
     for config in tqdm.tqdm(all_configs):
         config_dict = dict(zip(list(tuning_options.keys()), config))
         outer_learned["optimizer_p"].update(config_dict)
-        val_loss = system.val_loop(outer_learnable=outer_learned)
+        val_loss = system.val_loop(outer_learnable=outer_learned, early_exit_index=16)
 
         median_val_scores.append(np.median(val_loss))
 
