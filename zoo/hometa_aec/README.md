@@ -34,7 +34,7 @@ For more details, please see:
 @article{wu2022metalearning,
   title={Meta-Learning for Adaptive Filters with Higher-Order Frequency Dependencies},
   author={Wu, Junkai and Casebeer, Jonah and Bryan, Nicholas J. and Smaragdis, Paris},    
-  journal={arXiv preprint arXiv:2209.09955},
+  booktitle={IEEE International Workshop on Acoustic Signal Enhancement (IWAENC)},
   year={2022},
 }
 ```

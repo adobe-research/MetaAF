@@ -17,8 +17,8 @@ def default_args():
 
 def get_tuning_options(**kwargs):
     return {
-        "step_size": jnp.logspace(0, -4, 25),
-        "gamma": [0.7, 0.8, 0.9, 0.98, 0.99, 0.999],
+        "step_size": jnp.logspace(-5, 0, 25),
+        "gamma": [0.5, 0.7, 0.8, 0.9, 0.99, 0.999],
     }
 
 

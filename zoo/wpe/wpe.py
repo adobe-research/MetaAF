@@ -4,7 +4,6 @@ import glob2
 
 import haiku as hk
 import jax
-from jax.tree_util import Partial
 import jax.numpy as jnp
 import numpy as np
 import soundfile as sf
@@ -413,13 +412,13 @@ def make_stoi_val(window_size, hop_size):
 
 """
 WPE 5 1
-python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_1_c_td --unroll 16 --n_taps 5 --delay 2 --optimizer fgru
+python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 2 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_1_aa --unroll 16 --n_taps 5 --delay 2 --optimizer fgru --antialias
 
 WPE 5 4
-python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 4 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_4_c_td --unroll 16 --n_taps 5 --delay 2 --optimizer fgru --debug
+python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 4 --n_out_chan 1 --is_real --n_devices 2 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_4_aa --unroll 16 --n_taps 5 --delay 2 --optimizer fgru --antialias
 
 WPE 5 8
-python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 8 --n_out_chan 1 --is_real --n_devices 1 --batch_size 64 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_8_c_td --unroll 16 --n_taps 5 --delay 2 --optimizer fgru 
+python wpe.py --n_frames 7 --window_size 512 --hop_size 256 --n_in_chan 8 --n_out_chan 1 --is_real --n_devices 2 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_wpe_5_8_aa --unroll 16 --n_taps 5 --delay 2 --optimizer fgru --antialias
 """
 if __name__ == "__main__":
     import pprint
@@ -427,20 +426,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--optimizer", type=str, default="gru")
+    parser.add_argument("--optimizer", type=str, default="fgru")
 
     if parser.parse_known_args()[0].optimizer == "gru":
-        parser = optimizer_gru.ElementWiseGRU.add_args(parser)
-        gru_fwd = optimizer_gru._elementwise_gru_fwd
+        parser = optimizer_gru.EGRU.add_args(parser)
+        gru_fwd = optimizer_gru._fwd
         gru_init = optimizer_gru.init_optimizer_all_data
         gru_map = optimizer_gru.make_mapped_optmizer_all_data
-        gru_grab_args = optimizer_gru.ElementWiseGRU.grab_args
+        gru_grab_args = optimizer_gru.EGRU.grab_args
     elif parser.parse_known_args()[0].optimizer == "fgru":
-        parser = optimizer_fgru.TimeChanCoupledGRU.add_args(parser)
-        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        parser = optimizer_fgru.FGRU.add_args(parser)
+        gru_fwd = optimizer_fgru._fwd
         gru_init = optimizer_fgru.init_optimizer_all_data
         gru_map = optimizer_fgru.make_mapped_optmizer_all_data
-        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
+        gru_grab_args = optimizer_fgru.FGRU.grab_args
 
     parser = WPEOLA.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)

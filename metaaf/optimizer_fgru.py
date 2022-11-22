@@ -6,7 +6,7 @@ from metaaf.complex_gru import CGRU, add_batch
 from metaaf.complex_utils import complex_variance_scaling, complex_zeros, complex_relu
 
 
-class TimeChanCoupledGRU(hk.Module):
+class FGRU(hk.Module):
     def __init__(
         self, h_size, n_layers, lam_1, outsize, name="TimeChanCoupledGRU", **kwargs
     ):
@@ -119,8 +119,8 @@ class TimeChanCoupledGRU(hk.Module):
         }
 
 
-def _timechancoupled_gru_fwd(x, h, *extra_inputs, **kwargs):
-    optimizer = TimeChanCoupledGRU(**kwargs)
+def _fwd(x, h, *extra_inputs, **kwargs):
+    optimizer = FGRU(**kwargs)
     return optimizer(x, h, extra_inputs)
 
 
@@ -182,7 +182,7 @@ def make_mapped_optmizer_all_data(
         update, state = optimizer.apply(
             optimizer_p,
             None,
-            jnp.conj(features.filter_features),
+            grad,
             state,
             u,
             d,

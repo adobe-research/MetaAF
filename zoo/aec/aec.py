@@ -505,12 +505,16 @@ def aec_loss(out, data_samples, metadata):
     return out["loss"]
 
 
-def meta_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+def meta_mse_loss(
+    losses, outputs, data_samples, metadata, outer_index, outer_learnable
+):
     out = jnp.concatenate(outputs["out"], 0)
     return jnp.mean(jnp.abs(out) ** 2)
 
 
-def meta_log_mse_loss(losses, outputs, data_samples, metadata, outer_learnable):
+def meta_log_mse_loss(
+    losses, outputs, data_samples, metadata, outer_index, outer_learnable
+):
     out = jnp.concatenate(outputs["out"], 0)
     EPS = 1e-8
     return jnp.log(jnp.mean(jnp.abs(out) ** 2) + EPS)
@@ -534,6 +538,26 @@ def neg_erle_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
         erle = metrics.erle(np.array(y), np.array(d), np.array(e))
         erle_scores.append(erle)
     return -jnp.mean(jnp.array(erle_scores))
+
+
+def neg_serle_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
+    out = jnp.reshape(
+        outputs["out"],
+        (outputs["out"].shape[0], -1, outputs["out"].shape[-1]),
+    )
+    serle_scores = []
+    for i in range(len(out)):
+        min_len = min(
+            out.shape[1], data_samples["d"].shape[1], data_samples["e"].shape[1]
+        )
+
+        e = data_samples["e"][i, :min_len, 0]
+        d = data_samples["d"][i, :min_len, 0]
+        y = out[i, :min_len, 0]
+
+        serle = metrics.erle(np.array(y), np.array(d), np.array(e), segmental=True)
+        serle_scores.append(serle)
+    return -jnp.mean(jnp.array(serle_scores))
 
 
 """
@@ -562,7 +586,10 @@ Meta-ID - Unroll 32
 aec.py --n_frames 1 --window_size 2048 --hop_size 1024 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_id_32_1024_rl --unroll 32 --extra_signals udey --random_roll --outer_loss log_self_mse --dataset linear --true_rir_len 1024
 
 Meta-AEC Universal MDF
-python aec.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_combo_rl_4_1024_512 --unroll 16 --optimizer fgru --random_roll --outer_loss log_self_mse --double_talk --scene_change --dataset combo --random_level
+python aec.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_combo_rl_4_1024_512_r2 --unroll 16 --optimizer fgru --random_roll --random_level --outer_loss log_self_mse --double_talk --scene_change --dataset combo --val_loss serle
+
+Meta-AEC AEC Challenge MDF
+python aec.py --n_frames 4 --window_size 1024 --hop_size 512 --n_in_chan 1 --n_out_chan 1 --is_real --n_devices 1 --batch_size 32 --total_epochs 1000 --val_period 10 --reduce_lr_patience 1 --early_stop_patience 4 --name meta_aec_16_msft_rl_4_1024_512_r2 --unroll 16 --optimizer fgru --random_roll --random_level --outer_loss log_self_mse --double_talk --dataset nonlinear --val_loss serle
 """
 if __name__ == "__main__":
     import pprint
@@ -579,18 +606,19 @@ if __name__ == "__main__":
 
     parser.add_argument("--extra_signals", type=str, default="none")
     parser.add_argument("--outer_loss", type=str, default="self_mse")
+    parser.add_argument("--val_loss", type=str, default="erle")
     parser.add_argument("--optimizer", type=str, default="gru")
     parser.add_argument("--dataset", type=str, default="linear")
     parser.add_argument("--b1", type=float, default=0.99)
 
     if parser.parse_known_args()[0].optimizer == "gru":
-        parser = optimizer_gru.ElementWiseGRU.add_args(parser)
-        gru_fwd = optimizer_gru._elementwise_gru_fwd
-        gru_grab_args = optimizer_gru.ElementWiseGRU.grab_args
+        parser = optimizer_gru.EGRU.add_args(parser)
+        gru_fwd = optimizer_gru._fwd
+        gru_grab_args = optimizer_gru.EGRU.grab_args
     elif parser.parse_known_args()[0].optimizer == "fgru":
-        parser = optimizer_fgru.TimeChanCoupledGRU.add_args(parser)
-        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
-        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
+        parser = optimizer_fgru.FGRU.add_args(parser)
+        gru_fwd = optimizer_fgru._fwd
+        gru_grab_args = optimizer_fgru.FGRU.grab_args
 
     parser = AECOLS.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
@@ -629,7 +657,8 @@ if __name__ == "__main__":
         ),
         batch_size=kwargs["batch_size"],
         shuffle=True,
-        num_workers=12,
+        persistent_workers=True,
+        num_workers=10,
     )
     val_loader = NumpyLoader(
         aec_dataset(
@@ -637,6 +666,7 @@ if __name__ == "__main__":
             **dset_kwargs,
         ),
         batch_size=kwargs["batch_size"],
+        persistent_workers=True,
         num_workers=2,
     )
     test_loader = NumpyLoader(
@@ -665,10 +695,10 @@ if __name__ == "__main__":
         make_mapped_optmizer = optimizer_gru.make_mapped_optmizer_all_data
 
     if kwargs["optimizer"] == "fgru":
-        gru_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        gru_fwd = optimizer_fgru._fwd
         init_optimizer = optimizer_fgru.init_optimizer_all_data
         make_mapped_optmizer = optimizer_fgru.make_mapped_optmizer_all_data
-        gru_grab_args = optimizer_fgru.TimeChanCoupledGRU.grab_args
+        gru_grab_args = optimizer_fgru.FGRU.grab_args
         kwargs["outsize"] = kwargs["n_in_chan"] * kwargs["n_frames"]
 
     if kwargs["outer_loss"] == "self_mse":
@@ -680,6 +710,11 @@ if __name__ == "__main__":
     elif kwargs["outer_loss"] == "log_self_mse":
         outer_train_loss = meta_log_mse_loss
 
+    if kwargs["val_loss"] == "erle":
+        val_loss = neg_erle_val_loss
+    elif kwargs["val_loss"] == "serle":
+        val_loss = neg_serle_val_loss
+
     system = MetaAFTrainer(
         _filter_fwd=_AECOLS_fwd,
         filter_kwargs=AECOLS.grab_args(kwargs),
@@ -690,7 +725,7 @@ if __name__ == "__main__":
         _optimizer_fwd=gru_fwd,
         optimizer_kwargs=gru_grab_args(kwargs),
         meta_train_loss=outer_train_loss,
-        meta_val_loss=neg_erle_val_loss,
+        meta_val_loss=val_loss,
         init_optimizer=init_optimizer,
         make_mapped_optmizer=make_mapped_optmizer,
         callbacks=callbacks,

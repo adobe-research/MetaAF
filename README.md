@@ -29,10 +29,14 @@
 
 ## Abstract
 
-Adaptive filtering algorithms are pervasive throughout modern society and have had a significant impact on a wide variety of domains including audio processing, biomedical sensing, astropyhysics, and many more. Adaptive filters typically operate via specialized online, iterative optimization methods but can be laborious to develop and require domain expertise. In this work, we frame the development of adaptive filters as a deep meta-learning problem and present a framework for learning online, adaptive signal processing algorithms or update rules directly from data using self-supervision. We focus on audio applications and apply our approach to system identification, acoustic echo cancellation, blind equalization, multi-channel dereverberation, and beamforming. For each application, we compare against common baselines and/or state-of-the-art methods and show we can learn high-performing adaptive filters that operate in real-time and, in most cases, significantly out perform specially developed methods for each task using a single general-purpose configuration of our method.
+Adaptive filtering algorithms are pervasive throughout signal processing and have had a material impact on a wide variety of domains including audio processing, telecommunications, biomedical sensing, astrophysics and cosmology, seismology, and many more. Adaptive filters typically operate via specialized online, iterative optimization methods such as least-mean squares or recursive least squares and aim to process signals in unknown or nonstationary environments. Such algorithms, however, can be slow and laborious to develop, require domain expertise to create, and necessitate mathematical insight for improvement. In this work, we seek to improve upon hand-derived adaptive filter algorithms and present a comprehensive framework for learning online, adaptive signal processing algorithms or update rules directly from data. To do so, we frame the development of adaptive filters as a meta-learning problem in the context of deep learning and use a form of self-supervision to learn online iterative update rules for adaptive filters. To demonstrate our approach, we focus on audio applications and systematically develop meta-learned adaptive filters for five canonical audio problems including system identification, acoustic echo cancellation, blind equalization, multi-channel dereverberation, and beamforming. We compare our approach against common baselines and/or recent state-of-the-art methods. We show we can learn high-performing adaptive filters that operate in real-time and, in most cases, significantly outperform each method we compare against -- all using a single general-purpose configuration of our approach.
 
 For more details, please see:
-"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/2204.11942)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. If you use ideas or code from this work, please cite our paper:
+"[Meta-AF: Meta-Learning for Adaptive Filters](https://arxiv.org/abs/2204.11942)", [Jonah Casebeer](https://jmcasebeer.github.io), [Nicholas J. Bryan](https://ccrma.stanford.edu/~njb/), and [Paris Smaragdis](https://paris.cs.illinois.edu/), arXiv, 2022. Or, our talk:
+
+[![Lecture Video](https://img.youtube.com/vi/iM2t5D2caBI/hqdefault.jpg)](https://youtu.be/iM2t5D2caBI)
+
+If you use ideas or code from this work, please cite our paper:
 
 ```BibTex
 @article{casebeer2022meta,
@@ -207,7 +211,7 @@ def filter_loss(out, data_samples, metadata):
 We can construct the meta-train and meta-val losses in a similar fashion.
 
 ```{python}
-def meta_train_loss(losses, outputs, data_samples, metadata, outer_learnable):
+def meta_train_loss(losses, outputs, data_samples, metadata, outer_index, outer_learnable):
     out = jnp.concatenate(outputs["out"], 0)
     return jnp.log(jnp.mean(jnp.abs(out - data_samples["d"]) ** 2) +  1e-9)
 
@@ -224,10 +228,12 @@ def meta_val_loss(losses, outputs, data_samples, metadata, outer_learnable):
 With everything defined, we can setup the Meta-Trainer and start training.
 
 ```{python}
+from metaaf.optimizer_gru import EGRU
+
 # Collect arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--name", type=str, default="")
-parser = ElementWiseGRU.add_args(parser)
+parser = EGRU.add_args(parser)
 parser = SystemID.add_args(parser)
 parser = MetaAFTrainer.add_args(parser)
 kwargs = vars(parser.parse_args())
@@ -239,7 +245,7 @@ system = MetaAFTrainer(
     filter_loss=filter_loss,
     meta_train_loss=meta_train_loss,
     meta_val_loss=meta_val_loss,
-    optimizer_kwargs=ElementWiseGRU.grab_args(kwargs),
+    optimizer_kwargs=EGRU.grab_args(kwargs),
     train_loader=train_loader,
     val_loader=val_loader,
     test_loader=test_loader,
@@ -272,7 +278,7 @@ An extension of this work using `metaaf` [here](zoo/hometa_aec/README.md):
 @article{wu2022metalearning,
   title={Meta-Learning for Adaptive Filters with Higher-Order Frequency Dependencies},
   author={Wu, Junkai and Casebeer, Jonah and Bryan, Nicholas J. and Smaragdis, Paris},    
-  journal={arXiv preprint arXiv:2209.09955},
+  booktitle={IEEE International Workshop on Acoustic Signal Enhancement (IWAENC)},
   year={2022},
 }
 ```

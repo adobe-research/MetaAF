@@ -17,8 +17,16 @@ def default_args():
 
 def get_tuning_options(**kwargs):
     return {
-        "step_size": jnp.logspace(2, -2, 20),
-        "u_forget_factor": [0.5, 0.8, 0.9, 0.98, 0.99, 0.999],
+        "step_size": jnp.logspace(-2, 1, 15),
+        "u_forget_factor": [
+            0.5,
+            0.7,
+            0.8,
+            0.85,
+            0.9,
+            0.99,
+            0.999,
+        ],
     }
 
 
@@ -58,7 +66,7 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
         ).sum(0, keepdims=True)
 
         # compute parameter updates
-        update = (step_size * features.cur_outputs["grad"]) / (u_norm + 1e-2)
+        update = (step_size * features.cur_outputs["grad"]) / u_norm
 
         # return updated params and updated normalizations
         return (filter_p + update, u_norm)

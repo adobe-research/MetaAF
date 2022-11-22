@@ -6,7 +6,7 @@ from metaaf.complex_gru import CGRU, make_deep_initial_state
 from metaaf.complex_utils import complex_variance_scaling, complex_zeros, complex_relu
 
 
-class ElementWiseGRU(hk.Module):
+class EGRU(hk.Module):
     def __init__(
         self,
         h_size,
@@ -117,8 +117,8 @@ class ElementWiseGRU(hk.Module):
         }
 
 
-def _elementwise_gru_fwd(x, h, *extra_inputs, **kwargs):
-    optimizer = ElementWiseGRU(**kwargs)
+def _fwd(x, h, *extra_inputs, **kwargs):
+    optimizer = EGRU(**kwargs)
     return optimizer(x, h, extra_inputs)
 
 

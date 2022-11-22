@@ -16,7 +16,7 @@ import metaaf
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
 from metaaf import optimizer_gru
-from metaaf.optimizer_gru import ElementWiseGRU
+from metaaf.optimizer_gru import EGRU
 import metaaf.optimizer_lms as lms
 import metaaf.optimizer_nlms as nlms
 import metaaf.optimizer_rmsprop as rms
@@ -122,8 +122,8 @@ def get_system_ckpt(ckpt_dir, e, verbose=True, noop=False):
     outer_train_loss = eq.meta_log_mse_loss
     # switch case to find the right optimizer functions
     if kwargs["optimizer"] == "gru":
-        optimizer_kwargs = ElementWiseGRU.grab_args(kwargs)
-        _optimizer_fwd = optimizer_gru._elementwise_gru_fwd
+        optimizer_kwargs = EGRU.grab_args(kwargs)
+        _optimizer_fwd = optimizer_gru._fwd
         init_optimizer = optimizer_gru.init_optimizer_all_data
         make_mapped_optmizer = optimizer_gru.make_mapped_optmizer_all_data
 

@@ -16,7 +16,7 @@ def default_args():
 
 
 def get_tuning_options(**kwargs):
-    return {"step_size": jnp.logspace(2, -5, 75)}
+    return {"step_size": jnp.logspace(-6, 3, 100)}
 
 
 # this is a dummy function since we dont serialize anything

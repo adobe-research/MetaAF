@@ -19,7 +19,7 @@ from metaaf.data import NumpyLoader
 from metaaf.filter import OverlapSave
 from metaaf.meta import MetaAFTrainer
 from metaaf import optimizer_gru
-from metaaf.optimizer_gru import ElementWiseGRU
+from metaaf.optimizer_gru import EGRU
 from metaaf.callbacks import CheckpointCallback, WandBCallback, AudioLoggerCallback
 
 from zoo import metrics
@@ -283,7 +283,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true")
 
     parser = EQOLS.add_args(parser)
-    parser = ElementWiseGRU.add_args(parser)
+    parser = EGRU.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
     kwargs = vars(parser.parse_args())
     kwargs["optimizer"] = "gru"
@@ -323,7 +323,7 @@ if __name__ == "__main__":
         train_loader=train_loader,
         val_loader=val_loader,
         test_loader=test_loader,
-        optimizer_kwargs=ElementWiseGRU.grab_args(kwargs),
+        optimizer_kwargs=EGRU.grab_args(kwargs),
         meta_train_loss=meta_log_mse_loss,
         meta_val_loss=neg_snr_val_loss,
         init_optimizer=optimizer_gru.init_optimizer_all_data,

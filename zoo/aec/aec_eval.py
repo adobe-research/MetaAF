@@ -13,7 +13,7 @@ import metaaf
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
 from metaaf import optimizer_gru
-from metaaf.optimizer_gru import ElementWiseGRU
+from metaaf.optimizer_gru import EGRU
 from metaaf import optimizer_fgru
 import metaaf.optimizer_lms as lms
 import metaaf.optimizer_nlms as nlms
@@ -75,8 +75,8 @@ def get_system_ckpt(ckpt_dir, e, system_len=None, noop=False, verbose=False):
         outer_train_loss = aec.meta_log_mse_loss
     # switch case to find the right optimizer functions
     if kwargs["optimizer"] == "gru":
-        optimizer_kwargs = ElementWiseGRU.grab_args(kwargs)
-        _optimizer_fwd = optimizer_gru._elementwise_gru_fwd
+        optimizer_kwargs = EGRU.grab_args(kwargs)
+        _optimizer_fwd = optimizer_gru._fwd
 
         if kwargs["extra_signals"] == "none":
             init_optimizer = optimizer_gru.init_optimizer
@@ -86,8 +86,8 @@ def get_system_ckpt(ckpt_dir, e, system_len=None, noop=False, verbose=False):
             make_mapped_optmizer = optimizer_gru.make_mapped_optmizer_all_data
 
     elif kwargs["optimizer"] == "fgru":
-        optimizer_kwargs = optimizer_fgru.TimeChanCoupledGRU.grab_args(kwargs)
-        _optimizer_fwd = optimizer_fgru._timechancoupled_gru_fwd
+        optimizer_kwargs = optimizer_fgru.FGRU.grab_args(kwargs)
+        _optimizer_fwd = optimizer_fgru._fwd
         init_optimizer = optimizer_fgru.init_optimizer_all_data
         make_mapped_optmizer = optimizer_fgru.make_mapped_optmizer_all_data
 
@@ -263,8 +263,8 @@ if __name__ == "__main__":
                 mode="test",
                 double_talk=True,
                 scene_change=False,
-                random_roll=kwargs["random_roll"],
-                random_level=kwargs["random_level"],
+                random_roll=False,
+                random_level=False,
             ),
             aec.MSFTAECDataset(
                 mode="test",

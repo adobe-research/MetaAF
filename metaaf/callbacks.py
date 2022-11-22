@@ -150,7 +150,8 @@ class WandBCallback(CallbackMetaClass):
         if cur_batch % self.log_pd == 0:
             wandb.log(
                 {
-                    "train_loss": np.array(train_step_losses).mean(),
+                    "train_loss": np.nanmean(np.array(train_step_losses)),
+                    "train_num_nan": np.isnan(np.array(train_step_losses)).sum(),
                     "epoch": cur_epoch,
                     "batch": cur_batch,
                 }
@@ -159,7 +160,13 @@ class WandBCallback(CallbackMetaClass):
     def on_train_epoch_end(
         self, train_loop_losses, val_loop_losses, outer_learnable, cur_epoch
     ):
-        wandb.log({"val_loss": np.array(val_loop_losses).mean(), "epoch": cur_epoch})
+        wandb.log(
+            {
+                "val_loss": np.nanmean(np.array(val_loop_losses)),
+                "val_num_nan": np.isnan(np.array(val_loop_losses)).sum(),
+                "epoch": cur_epoch,
+            }
+        )
 
 
 class AudioLoggerCallback(CallbackMetaClass):
