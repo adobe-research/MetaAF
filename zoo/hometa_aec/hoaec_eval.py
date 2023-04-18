@@ -5,19 +5,17 @@ import json
 import pprint
 import tqdm
 import soundfile as sf
-import numpy as np
 import haiku as hk
 import jax.numpy as jnp
 
-import metaaf
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
 from metaaf import optimizer_hogru
-from metaaf.optimizer_hogru import HOElementWiseGRU
+from metaaf.optimizer_hogru import HO_EGRU
 from metaaf.filter import OverlapSave
 
 from zoo import metrics
-from zoo.__config__ import AEC_DATA_DIR, RES_DATA_DIR
+from zoo.__config__ import RES_DATA_DIR
 from zoo.aec.aec import MSFTAECDataset, AECOLS, _AECOLS_fwd, aec_loss, meta_log_mse_loss, neg_erle_val_loss
 
 
@@ -64,8 +62,8 @@ def get_system_ckpt(ckpt_dir, e, model_type="egru", no_extra=False, iwaenc_relea
 
     meta_train_loss = meta_log_mse_loss
 
-    optimizer_kwargs = HOElementWiseGRU.grab_args(kwargs)
-    _optimizer_fwd = optimizer_hogru._elementwise_hogru_fwd
+    optimizer_kwargs = HO_EGRU.grab_args(kwargs)
+    _optimizer_fwd = optimizer_hogru._fwd
     
     if no_extra:
         init_optimizer = optimizer_hogru.init_optimizer

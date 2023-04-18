@@ -13,10 +13,10 @@ from metaaf import optimizer_hogru
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
 from metaaf.filter import OverlapSave, OverlapAdd
-from metaaf.optimizer_hogru import HOElementWiseGRU, Identity
+from metaaf.optimizer_hogru import HO_EGRU, Identity
 from metaaf.callbacks import CheckpointCallback, WandBCallback, AudioLoggerCallback
 
-from hometa_aec.hoaec import (
+from zoo.hometa_aec.hoaec import (
     MSFTAECDataset,
     AECOLS,
     aec_loss,
@@ -411,7 +411,7 @@ if __name__ == "__main__":
     parser.add_argument("--denoising", action="store_true")
 
     parser = AECOLS.add_args(parser)
-    parser = HOElementWiseGRU.add_args(parser)
+    parser = HO_EGRU.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
     parser = MaskerGRUOLA.add_args(parser)
 

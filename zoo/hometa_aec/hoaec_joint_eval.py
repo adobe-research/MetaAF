@@ -5,25 +5,20 @@ import json
 import pprint
 import tqdm
 import soundfile as sf
-from scipy.io import wavfile
-import numpy as np
+
 
 from metaaf import optimizer_hogru
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
-from metaaf.optimizer_hogru import HOElementWiseGRU, Identity
+from metaaf.optimizer_hogru import Identity
 
-import hometa_aec.hoaec_joint as aec
+import zoo.hometa_aec.hoaec_joint as aec
 from zoo import metrics
 
-from hometa_aec.hoaec import (
+from zoo.hometa_aec.hoaec import (
     MSFTAECDataset,
-    AECOLS,
-    _AECOLS_fwd,
     aec_loss,
 )
-
-from __config__ import AEC_DATA_DIR, RES_DATA_DIR, RES_US_DATA_DIR
 
 
 def get_all_metrics(clean, enhanced, echo, mix, fs=16000):
