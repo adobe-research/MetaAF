@@ -4,7 +4,7 @@ import jax
 from metaaf import optimizer_hogru
 from metaaf.data import NumpyLoader
 from metaaf.meta import MetaAFTrainer
-from metaaf.optimizer_hogru import HOElementWiseGRU
+from metaaf.optimizer_hogru import HO_EGRU
 from metaaf.callbacks import CheckpointCallback, WandBCallback, AudioLoggerCallback
 
 from zoo.aec.aec import (
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--b1", type=float, default=0.99)  # adam parameter
 
     parser = AECOLS.add_args(parser)
-    parser = HOElementWiseGRU.add_args(parser)
+    parser = HO_EGRU.add_args(parser)
     parser = MetaAFTrainer.add_args(parser)
     kwargs = vars(parser.parse_args())
 
@@ -105,8 +105,8 @@ if __name__ == "__main__":
         train_loader=train_loader,
         val_loader=val_loader,
         test_loader=test_loader,
-        _optimizer_fwd=optimizer_hogru._elementwise_hogru_fwd,
-        optimizer_kwargs=HOElementWiseGRU.grab_args(kwargs),
+        _optimizer_fwd=optimizer_hogru._fwd,
+        optimizer_kwargs=HO_EGRU.grab_args(kwargs),
         meta_train_loss=meta_log_mse_loss,
         meta_val_loss=neg_erle_val_loss,
         init_optimizer=init_optimizer,

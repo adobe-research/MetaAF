@@ -18,7 +18,7 @@ python hoaec_eval.py \
 # eval res
 python hoaec_joint_eval.py \
     --mode res --name ${res_name} --date ${res_date} --epoch ${res_epoch} \
-    --aec_name ${aec_name} --save_metrics --save_outputs
+    --aec_name ${aec_name} --save_metrics # --save_outputs
 
 
 
