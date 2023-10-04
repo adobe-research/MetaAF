@@ -16,7 +16,6 @@ class EGRU(hk.Module):
         name="ElementWiseGRU",
         **kwargs
     ):
-
         super().__init__(name=name)
         self.h_size = h_size
         self.n_layers = n_layers
@@ -158,7 +157,7 @@ def init_optimizer_all_data(filter_p, batch_data, optimizer_dict, key):
 
 
 @optimizers.optimizer
-def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs):
+def make_mapped_optimizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs):
     def init(filter_p):
         state = make_deep_initial_state(filter_p, **optimizer_kwargs)
         return (filter_p, state)
@@ -189,7 +188,7 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
 
 
 @optimizers.optimizer
-def make_mapped_optmizer_all_data(
+def make_mapped_optimizer_all_data(
     optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs
 ):
     def init(filter_p):

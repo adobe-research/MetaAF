@@ -28,6 +28,7 @@ from metaaf.complex_utils import (
     complex_sigmoid,
     complex_tanh,
 )
+from metaaf.complex_norm import CLNorm
 import types
 from typing import Any, NamedTuple, Optional, Sequence, Tuple, Union
 
@@ -56,6 +57,7 @@ class CGRU(hk.RNNCore):
         w_i_init: Optional[hk.initializers.Initializer] = None,
         w_h_init: Optional[hk.initializers.Initializer] = None,
         b_init: Optional[hk.initializers.Initializer] = None,
+        use_norm=False,
         name: Optional[str] = None,
     ):
         super().__init__(name=name)
@@ -64,6 +66,12 @@ class CGRU(hk.RNNCore):
         self.w_h_init = w_h_init or complex_variance_scaling
         self.b_init = b_init or complex_zeros
         self.sig = complex_sigmoid
+
+        self.use_norm = use_norm
+        if self.use_norm:
+            self.i_norm = CLNorm(axis=-1, create_scale=True, create_offset=True)
+            self.zrh_norm = CLNorm(axis=-1, create_scale=True, create_offset=True)
+            self.ah_norm = CLNorm(axis=-1, create_scale=True, create_offset=True)
 
     def __call__(self, inputs, state):
         if inputs.ndim not in (1, 2):
@@ -82,14 +90,21 @@ class CGRU(hk.RNNCore):
         b_z, b_a = jnp.split(b, indices_or_sections=[2 * hidden_size], axis=0)
 
         gates_x = jnp.matmul(inputs, w_i)
+        if self.use_norm:
+            gates_x = self.i_norm(gates_x)
 
         zr_x, a_x = jnp.split(gates_x, indices_or_sections=[2 * hidden_size], axis=-1)
         zr_h = jnp.matmul(state, w_h_z)
+        if self.use_norm:
+            zr_h = self.zrh_norm(zr_h)
 
         zr = zr_x + zr_h + jnp.broadcast_to(b_z, zr_h.shape)
         z, r = jnp.split(self.sig(zr), indices_or_sections=2, axis=-1)
 
         a_h = jnp.matmul(r * state, w_h_a)
+
+        if self.use_norm:
+            a_h = self.ah_norm(a_h)
 
         a = complex_tanh(a_x + a_h + jnp.broadcast_to(b_a, a_h.shape))
 
@@ -120,7 +135,7 @@ def make_deep_initial_state(params, **kwargs):
     n_layers = kwargs["n_layers"]
 
     def single_layer_initial_state():
-        state = jnp.zeros([h_size], dtype=np.dtype("complex64"))
+        state = jnp.zeros([h_size], params.dtype)  # dtype=np.dtype("complex64"))
         state = add_batch(state, b_size)
         return state
 

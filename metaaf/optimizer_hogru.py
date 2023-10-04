@@ -5,7 +5,7 @@ import haiku as hk
 import numpy as np
 from metaaf.complex_gru import CGRU, add_batch
 from metaaf.complex_utils import complex_variance_scaling, complex_zeros, complex_relu
-from metaaf.complex_groupnorm import CGN
+from metaaf.complex_norm import CGN
 
 
 def make_deep_initial_state(params, **kwargs):
@@ -35,7 +35,6 @@ class HO_EGRU(hk.Module):
         name="ElementWiseGRU",
         **kwargs
     ):
-
         super().__init__(name=name)
         self.h_size = h_size
         self.n_layers = n_layers
@@ -159,7 +158,6 @@ class HO_EGRU(hk.Module):
             return self.in_lin(input_stack_flat)
 
     def postprocess_reshape(self, rnn_out, raw_input):
-
         if self.group_mode == "block":
             reshaped_out = rnn_out.reshape((*raw_input.shape, rnn_out.shape[-1]))
             reshaped_out = self.out_lin(reshaped_out)
@@ -236,11 +234,9 @@ def _fwd(x, h, *extra_inputs, **kwargs):
 
 class Identity(hk.Module):
     def __init__(self, name="Identity", **kwargs):
-
         super().__init__(name=name)
 
     def __call__(self, x, h, extra_inputs):
-
         return x, h
 
     @staticmethod
@@ -357,7 +353,7 @@ def init_optimizer_identity(optimizee_p, batch_data, optimizer_dict, key):
 
 
 @optimizers.optimizer
-def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs):
+def make_mapped_optimizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs):
     def init(optimizee_p):
         state = make_deep_initial_state(optimizee_p, **optimizer_kwargs)
         return (optimizee_p, state)
@@ -382,7 +378,7 @@ def make_mapped_optmizer(optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kw
 
 
 @optimizers.optimizer
-def make_mapped_optmizer_u_data(
+def make_mapped_optimizer_u_data(
     optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs
 ):
     def init(optimizee_p):
@@ -413,7 +409,7 @@ def make_mapped_optmizer_u_data(
 
 
 @optimizers.optimizer
-def make_mapped_optmizer_all_data(
+def make_mapped_optimizer_all_data(
     optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs
 ):
     def init(optimizee_p):
@@ -451,7 +447,7 @@ def make_mapped_optmizer_all_data(
 
 
 @optimizers.optimizer
-def make_mapped_optmizer_all_data_iwaenc(
+def make_mapped_optimizer_all_data_iwaenc(
     optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs
 ):
     def init(optimizee_p):
@@ -488,7 +484,7 @@ def make_mapped_optmizer_all_data_iwaenc(
 
 
 @optimizers.optimizer
-def make_mapped_optmizer_identity(
+def make_mapped_optimizer_identity(
     optimizer={}, optimizer_p={}, optimizer_kwargs={}, **kwargs
 ):
     def init(optimizee_p):

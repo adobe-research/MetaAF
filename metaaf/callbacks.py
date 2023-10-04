@@ -194,7 +194,7 @@ class AudioLoggerCallback(CallbackMetaClass):
             base_name = os.path.join(epoch_dir, f"{self.num_logged}")
             sf.write(f"{base_name}_out.wav", np.array(out[batch_idx, :, 0]), self.fs)
 
-            for (k, v) in data_batch["signals"].items():
+            for k, v in data_batch["signals"].items():
                 sf.write(f"{base_name}_{k}.wav", np.array(v[batch_idx, :, 0]), self.fs)
 
             batch_idx += 1

@@ -12,6 +12,9 @@ from metaaf.core import (
     make_outer_loop,
     make_fit_single,
     make_online_optimizer,
+    make_iterated_outer_loop,
+    make_iterated_fit_single,
+    make_iterated_online_optimizer,
     tree_duplicate,
     tree_split,
 )
@@ -20,7 +23,7 @@ from metaaf.optimizer_gru import (
     _fwd,
     EGRU,
     init_optimizer,
-    make_mapped_optmizer,
+    make_mapped_optimizer,
 )
 
 from metaaf.optimizer_utils import frame_indep_meta_logmse, clip_grads
@@ -41,37 +44,43 @@ class MetaAFTrainer:
         _optimizer_fwd=_fwd,
         optimizer_kwargs=EGRU.default_args(),
         init_optimizer=init_optimizer,
-        make_mapped_optmizer=make_mapped_optmizer,
-        make_get_filter_featues=make_inner_grad,
+        make_mapped_optimizer=make_mapped_optimizer,
+        make_train_mapped_optimizer=None,
+        make_get_filter_features=make_inner_grad,
         _preprocess_fwd=pre_utils._identity_fwd,
         preprocess_kwargs={},
         _postprocess_fwd=post_utils._identity_fwd,
         postprocess_kwargs={},
         meta_train_loss=frame_indep_meta_logmse,
         meta_val_loss=None,
+        auto_posterior=None,
+        inner_iterations=None,
         callbacks=[],
         kwargs={},
     ):
         """Function to initialize a MetaAFTrainer.
 
         Args:
-            _filter_fwd (_type_): Filter forward functin in Haiku formnat
+            _filter_fwd (_type_): Filter forward function in Haiku format
             filter_kwargs (_type_): Dictionary of any filter kwargs
             filter_loss (_type_): The filter loss function
             train_loader (_type_): Pytorch train dataloader that returns dictionary of "signals" to be buffered and "metadata" to be handled by the user
             val_loader (_type_): Pytorch validation dataloader that returns dictionary of "signals" to be buffered and "metadata" to be handled by the user
             test_loader (_type_): Pytorch test dataloader that returns dictionary of "signals" to be buffered and "metadata" to be handled by the user
             _optimizer_fwd (_type_, optional): Optimizer forward function to be applied to the filter. Defaults to _elementwise_gru_fwd.
-            optimizer_kwargs (_type_, optional): Optimizer kwarfs. Defaults to ElementWiseGRU.default_args().
+            optimizer_kwargs (_type_, optional): Optimizer kwargs. Defaults to ElementWiseGRU.default_args().
             init_optimizer (_type_, optional): Optimizer init function. Defaults to init_optimizer.
-            make_mapped_optmizer (_type_, optional): Function to turn optimizer into a mapped optimizer. Defaults to make_mapped_optmizer.
-            make_get_filter_featues (_type_, optional): Function to get filter features, typically the grad. Defaults to make_inner_grad.
+            make_mapped_optimizer (_type_, optional): Function to turn optimizer into a mapped optimizer. Defaults to make_mapped_optimizer.
+            make_train_mapped_optimizer (_type_, optional): Function to turn optimizer into a mapped optimizer, will only be used at train time. Defaults to same as make_mapped_optimizer.
+            make_get_filter_features (_type_, optional): Function to get filter features, typically the grad. Defaults to make_inner_grad.
             _preprocess_fwd (_type_, optional): Preprocessor Haiku style forward. Defaults to pre_utils._identity_fwd.
             preprocess_kwargs (dict, optional): Preprocessors kwargs. Defaults to {}.
             _postprocess_fwd (_type_, optional): Postprocessor Haiku style forward.. Defaults to post_utils._identity_fwd.
             postprocess_kwargs (dict, optional): Postprocessor kwargs. Defaults to {}.
             meta_train_loss (_type_, optional): The meta training loss function. Defaults to frame_indep_meta_logmse.
             meta_val_loss (_type_, optional): The validation function to use for early stopping. Defaults to None.
+            auto_posterior (_type_, optional): Flag to turn on automatic posterior mode
+            inner_iterations (_type_, optional): If 1 default behavior otherwise uses the iterated internal setups.
             callbacks (list, optional): Any optional callbacks. Defaults to [].
             kwargs (dict, optional): Any kwargs that should be logged ans saved via a callback. Defaults to {}.
         """
@@ -112,15 +121,21 @@ class MetaAFTrainer:
         }
 
         # optimizer helper functions
-        self.make_mapped_optmizer = make_mapped_optmizer
+        self.make_mapped_optimizer = make_mapped_optimizer
+        self.make_train_mapped_optimizer = (
+            make_mapped_optimizer
+            if make_train_mapped_optimizer is None
+            else make_train_mapped_optimizer
+        )
         self.init_optimizer = init_optimizer
-        self.make_get_filter_featues = make_get_filter_featues
+        self.make_get_filter_features = make_get_filter_features
 
         # loss functions
         self.meta_train_loss = meta_train_loss
         self.meta_val_loss = meta_train_loss if meta_val_loss is None else meta_val_loss
         self.filter_loss = filter_loss
-
+        self.inner_iterations = inner_iterations
+        self.auto_posterior = auto_posterior
         # training hyperparameters
         self.show_progress = True
         self.unroll = None
@@ -142,7 +157,7 @@ class MetaAFTrainer:
         self.meta_opt_update = None
         self.meta_opt_get_params = None
         self.outer_loop = None
-        self.get_filter_featues = None
+        self.get_filter_features = None
 
         # Compiled/created fast init functions
         self.fast_init_filter = None
@@ -153,6 +168,8 @@ class MetaAFTrainer:
     def add_args(parent_parser):
         parser = parent_parser.add_argument_group("Trainer")
         parser.add_argument("--unroll", type=int, default=10)
+        parser.add_argument("--inner_iterations", type=int, default=1)
+        parser.add_argument("--auto_posterior", action="store_true")
         parser.add_argument("--total_epochs", type=int, default=1)
         parser.add_argument("--batch_size", type=int, default=4)
         parser.add_argument("--n_devices", type=int, default=1)
@@ -165,6 +182,8 @@ class MetaAFTrainer:
     def grab_args(kwargs):
         keys = [
             "unroll",
+            "inner_iterations",
+            "auto_posterior",
             "total_epochs",
             "batch_size",
             "n_devices",
@@ -312,6 +331,8 @@ class MetaAFTrainer:
     def train(
         self,
         unroll=16,
+        inner_iterations=1,
+        auto_posterior=False,
         total_epochs=5,
         batch_size=1,
         n_devices=1,
@@ -329,6 +350,8 @@ class MetaAFTrainer:
 
         Args:
             unroll (int, optional): Integer unroll. Defaults to 16.
+            inner_iterations (int, optional): Integer number of inner steps defaults to 1.
+            auto_posterior (bool, optional): Flag to turn on automatic posterior mode
             total_epochs (int, optional): Integer num epochs. Defaults to 5.
             batch_size (int, optional): Integer batch size. Defaults to 1.
             n_devices (int, optional): Integer num GPUs. Defaults to 1.
@@ -347,6 +370,11 @@ class MetaAFTrainer:
         """
         if key is None:
             key = jax.random.PRNGKey(0)
+
+        if self.inner_iterations is None:
+            self.inner_iterations = inner_iterations
+        if self.auto_posterior is None:
+            self.auto_posterior = auto_posterior
 
         self.unroll = unroll
         self.total_epochs = total_epochs
@@ -589,23 +617,38 @@ class MetaAFTrainer:
         batch,
         key,
     ):
-        if self.get_filter_featues is None:
-            self.get_filter_featues = self.make_get_filter_featues(
+        if self.get_filter_features is None:
+            self.get_filter_features = self.make_get_filter_features(
                 self.filter, self.inner_fixed, self.filter_loss
             )
 
         if self.outer_loop is None:
-            outer_loop = make_outer_loop(
-                make_mapped_optmizer=self.make_mapped_optmizer,
-                outer_fixed=self.outer_fixed,
-                meta_loss=self.meta_train_loss,
-                meta_opt_update=self.meta_opt_update,
-                meta_opt_get_params=self.meta_opt_get_params,
-                meta_opt_preprocess=self.meta_opt_preprocess,
-                get_filter_featues=self.get_filter_featues,
-                unroll=self.unroll,
-                hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],
-            )
+            if self.inner_iterations > 1 or self.auto_posterior:
+                outer_loop = make_iterated_outer_loop(
+                    make_mapped_optimizer=self.make_train_mapped_optimizer,
+                    outer_fixed=self.outer_fixed,
+                    meta_loss=self.meta_train_loss,
+                    meta_opt_update=self.meta_opt_update,
+                    meta_opt_get_params=self.meta_opt_get_params,
+                    meta_opt_preprocess=self.meta_opt_preprocess,
+                    get_filter_featues=self.get_filter_features,
+                    unroll=self.unroll,
+                    hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],
+                    inner_iterations=self.inner_iterations,
+                    auto_posterior=self.auto_posterior,
+                )
+            else:
+                outer_loop = make_outer_loop(
+                    make_mapped_optimizer=self.make_train_mapped_optimizer,
+                    outer_fixed=self.outer_fixed,
+                    meta_loss=self.meta_train_loss,
+                    meta_opt_update=self.meta_opt_update,
+                    meta_opt_get_params=self.meta_opt_get_params,
+                    meta_opt_preprocess=self.meta_opt_preprocess,
+                    get_filter_featues=self.get_filter_features,
+                    unroll=self.unroll,
+                    hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],
+                )
 
             self.outer_loop = jax.pmap(outer_loop, axis_name="devices")
 
@@ -649,15 +692,15 @@ class MetaAFTrainer:
         if outer_learnable is None:
             outer_learnable = self.outer_learnable
 
-        if self.get_filter_featues is None:
-            self.get_filter_featues = self.make_get_filter_featues(
+        if self.get_filter_features is None:
+            self.get_filter_features = self.make_get_filter_features(
                 self.filter, self.inner_fixed, self.filter_loss
             )
         # precompile the fit single batch functin
         fit_infer = self.make_fit_infer(outer_learnable=outer_learnable)
 
         loop_loss = []
-        for (batch_idx, batch) in enumerate(self.val_loader):
+        for batch_idx, batch in enumerate(self.val_loader):
             key, subkey = jax.random.split(key)
             out, aux = self.infer(
                 batch,
@@ -702,8 +745,8 @@ class MetaAFTrainer:
         if outer_learnable is None:
             outer_learnable = self.outer_learnable
 
-        if self.get_filter_featues is None:
-            self.get_filter_featues = self.make_get_filter_featues(
+        if self.get_filter_features is None:
+            self.get_filter_features = self.make_get_filter_features(
                 self.filter, self.inner_fixed, self.filter_loss
             )
 
@@ -711,7 +754,7 @@ class MetaAFTrainer:
         fit_infer = self.make_fit_infer(outer_learnable=outer_learnable)
 
         loop_loss = []
-        for (batch_idx, batch) in enumerate(self.test_loader):
+        for batch_idx, batch in enumerate(self.test_loader):
             key, subkey = jax.random.split(key)
             out, aux = self.infer(
                 batch,
@@ -750,17 +793,30 @@ class MetaAFTrainer:
         if outer_learnable is None:
             outer_learnable = self.outer_learnable
 
-        get_filter_featues = self.make_get_filter_featues(
+        get_filter_features = self.make_get_filter_features(
             self.filter, self.inner_fixed, self.filter_loss
         )
-        return make_fit_single(
-            outer_learnable=outer_learnable,
-            outer_fixed=self.outer_fixed,
-            infer_meta_loss=self.meta_val_loss,
-            make_mapped_optmizer=self.make_mapped_optmizer,
-            get_filter_featues=get_filter_featues,
-            hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],
-        )
+
+        if self.inner_iterations > 1 or self.auto_posterior:
+            return make_iterated_fit_single(
+                outer_learnable=outer_learnable,
+                outer_fixed=self.outer_fixed,
+                infer_meta_loss=self.meta_val_loss,
+                make_mapped_optimizer=self.make_mapped_optimizer,
+                get_filter_features=get_filter_features,
+                hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],
+                inner_iterations=self.inner_iterations,
+                auto_posterior=self.auto_posterior,
+            )
+        else:
+            return make_fit_single(
+                outer_learnable=outer_learnable,
+                outer_fixed=self.outer_fixed,
+                infer_meta_loss=self.meta_val_loss,
+                make_mapped_optimizer=self.make_mapped_optimizer,
+                get_filter_features=get_filter_features,
+                hop_size=self.inner_fixed["filter_kwargs"]["hop_size"],
+            )
 
     def infer(
         self,
@@ -794,8 +850,8 @@ class MetaAFTrainer:
         if outer_learnable is None:
             outer_learnable = self.outer_learnable
 
-        if self.get_filter_featues is None:
-            self.get_filter_featues = self.make_get_filter_featues(
+        if self.get_filter_features is None:
+            self.get_filter_features = self.make_get_filter_features(
                 self.filter, self.inner_fixed, self.filter_loss
             )
         if fit_infer is None:
@@ -844,17 +900,27 @@ class MetaAFTrainer:
         if outer_learnable is None:
             outer_learnable = self.outer_learnable
 
-        if self.get_filter_featues is None:
-            self.get_filter_featues = self.make_get_filter_featues(
+        if self.get_filter_features is None:
+            self.get_filter_features = self.make_get_filter_features(
                 self.filter, self.inner_fixed, self.filter_loss
             )
 
-        online_step, online_state = make_online_optimizer(
-            outer_learnable=outer_learnable,
-            outer_fixed=self.outer_fixed,
-            make_mapped_optmizer=self.make_mapped_optmizer,
-            get_filter_featues=self.get_filter_featues,
-        )
+        if self.inner_iterations > 1 or self.auto_posterior:
+            online_step, online_state = make_iterated_online_optimizer(
+                outer_learnable=outer_learnable,
+                outer_fixed=self.outer_fixed,
+                make_mapped_optimizer=self.make_mapped_optimizer,
+                get_filter_features=self.get_filter_features,
+                inner_iterations=self.inner_iterations,
+                auto_posterior=self.auto_posterior,
+            )
+        else:
+            online_step, online_state = make_online_optimizer(
+                outer_learnable=outer_learnable,
+                outer_fixed=self.outer_fixed,
+                make_mapped_optimizer=self.make_mapped_optimizer,
+                get_filter_features=self.get_filter_features,
+            )
 
         # get batch of size 1
         batch = next(iter(self.train_loader))

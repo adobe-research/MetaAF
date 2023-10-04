@@ -190,7 +190,8 @@ class OverlapSave(BufferedFilterMixin, hk.Module):
         # assumes you want a buffer size filter
         if shape is None:
             shape = [self.n_frames, self.n_freq, self.n_in_chan]
-        w = hk.get_parameter(name, shape, init=self.w_init, dtype=jnp.complex64)
+
+        w = hk.get_parameter(name, shape, init=self.w_init)
 
         # time domain antialias
         w_td = self.ifft(w, axis=1).at[:, -self.hop_size :, :].set(0.0)
@@ -262,7 +263,7 @@ class OverlapAdd(BufferedFilterMixin, hk.Module):
 
         return analysis_window / denom
 
-    def get_filter(self, name, shape=None):
+    def get_filter(self, name, shape=None, dtype=None):
         if shape is None:
             # assumes you want a buffer size filter
             shape = [self.n_frames, self.n_freq, self.n_in_chan]
@@ -329,3 +330,33 @@ def make_inner_grad(filter, inner_fixed, frame_loss):
         return loss, (out, filter_s)
 
     return jax.value_and_grad(filter_wrapper_loss, has_aux=True)
+
+
+def make_inner_passthrough(filter, inner_fixed, frame_loss):
+    """Function to make the feature extractor for the filter when not using grad and just passing the current filter parameters through.
+
+    Args:
+        filter (_type_): The filter from Haiku
+        inner_fixed (_type_): Filter kwargs
+        frame_loss (_type_): The AF or frame loss
+
+    Returns:
+        _type_: Function that computes the output values and gradients.
+    """
+
+    @jit
+    def filter_wrapper(filter_p, filter_s, cur_data_samples, metadata, key):
+        out, filter_s = filter.apply(
+            filter_p,
+            filter_s,
+            key,
+            **cur_data_samples,
+            **inner_fixed["filter_kwargs"],
+            metadata=metadata
+        )
+        loss = frame_loss(out, cur_data_samples, metadata)
+
+        # ((value, aux_data), gradient)
+        return ((loss, (out, filter_s)), filter_p)
+
+    return filter_wrapper

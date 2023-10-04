@@ -95,8 +95,8 @@ def tree_feature_container(feature, output, data, metadata, key):
 def make_inner_loop(
     outer_fixed,
     meta_loss,
-    make_mapped_optmizer,
-    get_filter_featues,
+    make_mapped_optimizer,
+    get_filter_features,
     hop_size,
     unroll,
 ):
@@ -105,8 +105,8 @@ def make_inner_loop(
     Args:
         outer_fixed (_type_): Outer kwargs that are fized, this is a dictionary.
         meta_loss (_type_): The meta-loss function
-        make_mapped_optmizer (_type_): The function that produces a mapped optimizer
-        get_filter_featues (_type_): Filter feature extraction function, typically grad
+        make_mapped_optimizer (_type_): The function that produces a mapped optimizer
+        get_filter_features (_type_): Filter feature extraction function, typically grad
         hop_size (_type_): The filter hop in samples
         unroll (_type_): The unroll size
 
@@ -149,7 +149,7 @@ def make_inner_loop(
             _type_: A tuple where the first element is the final loss, and the second element is a list of all losses, and then a list of all states
         """
 
-        _, opt_update, get_params = make_mapped_optmizer(**outer_learnable)
+        _, opt_update, get_params = make_mapped_optimizer(**outer_learnable)
         n_filter_updates = (
             next(iter(batch_signals_unroll.values())).shape[0] // hop_size
         )
@@ -175,7 +175,7 @@ def make_inner_loop(
 
             # run the filter
             key, subkey = jax.random.split(key)
-            grad_aux, filter_features = get_filter_featues(
+            grad_aux, filter_features = get_filter_features(
                 get_params(opt_s), filter_s, batch_hop, batch_metadata, subkey
             )
 
@@ -237,7 +237,7 @@ def make_inner_loop(
 def make_outer_loop(
     outer_fixed,
     meta_loss,
-    make_mapped_optmizer,
+    make_mapped_optimizer,
     meta_opt_update,
     meta_opt_get_params,
     meta_opt_preprocess,
@@ -250,7 +250,7 @@ def make_outer_loop(
     Args:
         outer_fixed (_type_): Meta-learned parameters
         meta_loss (_type_): The meta-loss
-        make_mapped_optmizer (_type_): Function to make a mapped optimizer
+        make_mapped_optimizer (_type_): Function to make a mapped optimizer
         meta_opt_update (_type_): Meta optimizer update function
         meta_opt_get_params (_type_): Meta optimizer get params
         meta_opt_preprocess (_type_): Meta optimizer pre-process (e.g. clipping)
@@ -261,14 +261,14 @@ def make_outer_loop(
     Returns:
         _type_: Returns the outer loop function with signature below
     """
-    make_mapped_optmizer = Partial(make_mapped_optmizer, **outer_fixed["optimizer"])
+    make_mapped_optimizer = Partial(make_mapped_optimizer, **outer_fixed["optimizer"])
 
     # learned opt gradient function
     mapped_loss = make_inner_loop(
         outer_fixed=outer_fixed,
         meta_loss=meta_loss,
-        make_mapped_optmizer=make_mapped_optmizer,
-        get_filter_featues=get_filter_featues,
+        make_mapped_optimizer=make_mapped_optimizer,
+        get_filter_features=get_filter_featues,
         hop_size=hop_size,
         unroll=unroll,
     )
@@ -303,7 +303,7 @@ def make_outer_loop(
 
         # get optimizer params and init in jax format
         outer_learnable = meta_opt_get_params(meta_opt_s)
-        opt_init, _, _ = make_mapped_optmizer(**outer_learnable)
+        opt_init, _, _ = make_mapped_optimizer(**outer_learnable)
         opt_s = jax.vmap(opt_init)(filter_p)
 
         @jit
@@ -387,21 +387,21 @@ def make_outer_loop(
 
 
 def make_online_optimizer(
-    outer_learnable, outer_fixed, make_mapped_optmizer, get_filter_featues
+    outer_learnable, outer_fixed, make_mapped_optimizer, get_filter_features
 ):
     """Function to make inference/test-time run function for the optimizer
 
     Args:
         outer_learnable (_type_): All outer-learned parameters
         outer_fixed (_type_): All outer-learned kwards
-        make_mapped_optmizer (_type_): Function to make mapped optimizer
-        get_filter_featues (_type_): Filter feature extraction function, typically grad
+        make_mapped_optimizer (_type_): Function to make mapped optimizer
+        get_filter_features (_type_): Filter feature extraction function, typically grad
 
     Returns:
         _type_: online_step and online_state functions
     """
     optimizer_args = {**outer_learnable, **outer_fixed["optimizer"]}
-    opt_init, opt_update, get_params = make_mapped_optmizer(**optimizer_args)
+    opt_init, opt_update, get_params = make_mapped_optimizer(**optimizer_args)
 
     preprocess = outer_fixed["preprocess"]["preprocess"]
     preprocess_kwargs = outer_fixed["preprocess"]["preprocess_kwargs"]
@@ -449,7 +449,7 @@ def make_online_optimizer(
         )
         # run the filter
         key, subkey = jax.random.split(key)
-        aux, filter_features = get_filter_featues(
+        aux, filter_features = get_filter_features(
             get_params(opt_s), filter_s, batch_hop, batch_metadata, subkey
         )
         loss, [out, filter_s] = aux
@@ -482,8 +482,8 @@ def make_fit_single(
     outer_learnable,
     outer_fixed,
     infer_meta_loss,
-    make_mapped_optmizer,
-    get_filter_featues,
+    make_mapped_optimizer,
+    get_filter_features,
     hop_size,
 ):
     """Makes a function that can fit and process a full signal.
@@ -492,8 +492,8 @@ def make_fit_single(
         outer_learnable (_type_): All outer-learned parameters
         outer_fixed (_type_): All outer-learned kwargs
         infer_meta_loss (_type_): The inference time meta-loss -- not vectorized
-        make_mapped_optmizer (_type_): Function to make mapped optimizer
-        get_filter_featues (_type_): Filter feature extraction function, typically grad
+        make_mapped_optimizer (_type_): Function to make mapped optimizer
+        get_filter_features (_type_): Filter feature extraction function, typically grad
         hop_size (_type_): Filter hop size in samples
 
     Returns:
@@ -502,8 +502,577 @@ def make_fit_single(
     online_step, online_state = make_online_optimizer(
         outer_learnable=outer_learnable,
         outer_fixed=outer_fixed,
-        make_mapped_optmizer=make_mapped_optmizer,
+        make_mapped_optimizer=make_mapped_optimizer,
+        get_filter_features=get_filter_features,
+    )
+
+    batch_step = jax.vmap(online_step, (0, 0, 0))
+
+    def fit_single(filter_s, filter_p, preprocess_s, postprocess_s, batch, key):
+        """Processes a full length signal
+
+        Args:
+            filter_s (_type_): Filter state
+            filter_p (_type_): Filter parameters
+            preprocess_s (_type_): Preprocessor state
+            postprocess_s (_type_): Postprocessor state
+            batch (_type_): A full batch of data
+            key (_type_): JAX PRNGKey
+
+        Returns:
+            _type_: Returns a tuple with first element being the buffered outputs and second elements being the final loss, all losses, any extra outputs, and the final state.
+        """
+
+        data_shape = next(iter(batch["signals"].values())).shape
+        batch_size = data_shape[0]
+        n_filter_updates = data_shape[1] // hop_size
+
+        batch_state = (
+            filter_s,
+            jax.vmap(online_state)(filter_p),
+            preprocess_s,
+            postprocess_s,
+            jnp.zeros(batch_size),
+        )
+
+        all_losses = []
+        out = []
+
+        # Iterate over n_steps
+        for i in range(n_filter_updates):
+            batch_hop_signals = tree_slice_axis(
+                batch["signals"], [0, i * hop_size], [batch_size, hop_size]
+            )
+            batch_hop = {"signals": batch_hop_signals, "metadata": batch["metadata"]}
+
+            key, *subkeys = jax.random.split(key, 1 + batch_size)
+            cur_out, loss, batch_state = batch_step(
+                batch_state, batch_hop, jnp.array(subkeys)
+            )
+            all_losses.append(loss)
+            out.append(cur_out)
+
+        # we can stack the first output since we know its shape
+        # other outputs go in the auxilliary list
+        out = tree_stack(out, axis=1)
+        first_out = jnp.reshape(
+            out["out"] if type(out) is dict else out,
+            (batch_size, -1, out["out"].shape[-1]),
+        )
+
+        all_losses = jnp.array(all_losses).T
+        final_loss = infer_meta_loss(
+            all_losses, out, batch["signals"], batch["metadata"], outer_learnable
+        )
+
+        aux = (final_loss, all_losses, out, batch_state)
+        return first_out, aux
+
+    return fit_single
+
+
+def inner_inner_loop(
+    auto_posterior,
+    opt_update,
+    opt_s,
+    get_params,
+    get_filter_features,
+    filter_s,
+    batch_hop,
+    batch_metadata,
+    outer_index,
+    unroll,
+    inner_index,
+    inner_iterations,
+    key,
+):
+    """_summary_
+
+    Args:
+        auto_posterior (_type_): Flag to turn on automatic posterior
+        opt_update (_type_): Function that runs the optimizer
+        opt_s (_type_): Current optimizer state
+        get_params (_type_): Function to get filter state from optimizer
+        get_filter_features (_type_): Function to get features for the optimizer
+        filter_s (_type_): Current filter state
+        batch_hop (_type_): Curent signal data
+        batch_metadata (_type_): Current metadata
+        outer_index (_type_): Outerloop index
+        unroll (_type_): Unroll size
+        inner_index (_type_): Inner loop index
+        inner_iterations (_type_): Inner inner iterations
+        key (_type_): jax random key
+
+    Returns:
+        _type_: The current step filter output, loss, and new state
+    """
+    for _ in range(inner_iterations):
+        # run the filter
+        key, subkey = jax.random.split(key)
+        grad_aux, filter_features = get_filter_features(
+            get_params(opt_s), filter_s, batch_hop, batch_metadata, subkey
+        )
+
+        filter_loss, [out, new_filter_s] = grad_aux
+
+        key, subkey = jax.random.split(key)
+        filter_features = tree_feature_container(
+            filter_features, out, batch_hop, batch_metadata, subkey
+        )
+
+        # run the optimizer update
+        opt_s = opt_update(unroll * outer_index + inner_index, filter_features, opt_s)
+
+    if auto_posterior:
+        # final filter application to complete a potential posterior
+        key, subkey = jax.random.split(key)
+        grad_aux, filter_features = get_filter_features(
+            get_params(opt_s), filter_s, batch_hop, batch_metadata, subkey
+        )
+
+        filter_loss, [out, filter_s] = grad_aux
+    else:
+        filter_s = new_filter_s
+
+    # finally update the filter state
+    return out, filter_loss, filter_s, opt_s
+
+
+def make_iterated_inner_loop(
+    outer_fixed,
+    meta_loss,
+    make_mapped_optimizer,
+    get_filter_featues,
+    hop_size,
+    unroll,
+    inner_iterations,
+    auto_posterior,
+):
+    """Function that constructs the inner loop function.
+
+    Args:
+        outer_fixed (_type_): Outer kwargs that are fized, this is a dictionary.
+        meta_loss (_type_): The meta-loss function
+        make_mapped_optimizer (_type_): The function that produces a mapped optimizer
+        get_filter_featues (_type_): Filter feature extraction function, typically grad
+        hop_size (_type_): The filter hop in samples
+        unroll (_type_): The unroll size
+        iterations (_type_): The number of iterations at each step
+        auto_posterior (_type_, optional): Flag to turn on automatic posterior mode
+    Returns:
+        _type_: Function called "run_inner_loop" with signature below
+    """
+
+    preprocess = outer_fixed["preprocess"]["preprocess"]
+    preprocess_kwargs = outer_fixed["preprocess"]["preprocess_kwargs"]
+
+    postprocess = outer_fixed["postprocess"]["postprocess"]
+    postprocess_kwargs = outer_fixed["postprocess"]["postprocess_kwargs"]
+
+    @jit
+    def run_inner_loop(
+        outer_learnable,
+        opt_s,
+        filter_s,
+        preprocess_s,
+        postprocess_s,
+        batch_signals_unroll,
+        batch_metadata,
+        key,
+        outer_index,
+    ):
+        """The actual run inner loop function.
+
+        Args:
+            outer_learnable (_type_): Meta-learned parameters
+            opt_s (_type_): Optimizer state
+            filter_s (_type_): Filter state
+            preprocess_s (_type_): Preprocessor state
+            postprocess_s (_type_): Postprocessor state
+            batch_signals_unroll (_type_): Chunk of signal to process
+            batch_metadata (_type_): Any metadata
+            key (_type_): JAX PRNGKey
+            outer_index (_type_): The index of this loop
+
+        Returns:
+            _type_: A tuple where the first element is the final loss, and the second element is a list of all losses, and then a list of all states
+        """
+
+        _, opt_update, get_params = make_mapped_optimizer(**outer_learnable)
+        n_filter_updates = (
+            next(iter(batch_signals_unroll.values())).shape[0] // hop_size
+        )
+
+        # innermost update, apply, update, apply loop
+        @jit
+        def step_update_inner(state, i):
+            filter_s, opt_s, preprocess_s, postprocess_s, key = state
+            batch_hop = tree_slice_axis(
+                batch_signals_unroll, [i * hop_size], [hop_size]
+            )
+
+            # run outer trained preprocessing
+            key, subkey = jax.random.split(key)
+            batch_hop, preprocess_s = preprocess.apply(
+                outer_learnable["preprocess_p"],
+                preprocess_s,
+                subkey,
+                data=batch_hop,
+                metadata=batch_metadata,
+                **preprocess_kwargs
+            )
+
+            # the iterated portion
+            out, filter_loss, filter_s, opt_s = inner_inner_loop(
+                auto_posterior,
+                opt_update,
+                opt_s,
+                get_params,
+                get_filter_featues,
+                filter_s,
+                batch_hop,
+                batch_metadata,
+                outer_index,
+                unroll,
+                i,
+                inner_iterations,
+                key,
+            )
+
+            # run outer trained postprocessing
+            key, subkey = jax.random.split(key)
+            out, postprocess_s = postprocess.apply(
+                outer_learnable["postprocess_p"],
+                postprocess_s,
+                subkey,
+                data=batch_hop,
+                metadata=batch_metadata,
+                out=out,
+                **postprocess_kwargs
+            )
+
+            # make the new state
+            state = (filter_s, opt_s, preprocess_s, postprocess_s, key)
+
+            return state, (filter_loss, out)
+
+        # run the sequence of updates
+        init_state = (filter_s, opt_s, preprocess_s, postprocess_s, key)
+        steps = jnp.arange(n_filter_updates)
+        final_state, [all_losses, out] = jax.lax.scan(
+            step_update_inner, init_state, steps
+        )
+
+        # out = jnp.concatenate(out, 0)
+        filter_s, opt_s, preprocess_s, postprocess_s, _ = final_state
+
+        # this is the meta loss function
+        final_loss = meta_loss(
+            all_losses,
+            out,
+            batch_signals_unroll,
+            batch_metadata,
+            outer_index,
+            outer_learnable,
+        )
+
+        return (
+            final_loss,
+            (all_losses, out, opt_s, filter_s, preprocess_s, postprocess_s),
+        )
+
+    return run_inner_loop
+
+
+def make_iterated_outer_loop(
+    outer_fixed,
+    meta_loss,
+    make_mapped_optimizer,
+    meta_opt_update,
+    meta_opt_get_params,
+    meta_opt_preprocess,
+    get_filter_featues,
+    unroll,
+    hop_size,
+    inner_iterations,
+    auto_posterior,
+):
+    """Function to make the outer loop function
+
+    Args:
+        outer_fixed (_type_): Meta-learned parameters
+        meta_loss (_type_): The meta-loss
+        make_mapped_optimizer (_type_): Function to make a mapped optimizer
+        meta_opt_update (_type_): Meta optimizer update function
+        meta_opt_get_params (_type_): Meta optimizer get params
+        meta_opt_preprocess (_type_): Meta optimizer pre-process (e.g. clipping)
+        get_filter_featues (_type_): Get filter features function, usually grad
+        unroll (_type_): Unroll length
+        hop_size (_type_): Filter hop size in samples
+        inner_iterations (_type_): Filter-opt inner iterations at a step
+        auto_posterior (_type_, optional): Flag to turn on automatic posterior mode
+    Returns:
+        _type_: Returns the outer loop function with signature below
+    """
+    make_mapped_optimizer = Partial(make_mapped_optimizer, **outer_fixed["optimizer"])
+
+    # learned opt gradient function
+    mapped_loss = make_iterated_inner_loop(
+        outer_fixed=outer_fixed,
+        meta_loss=meta_loss,
+        make_mapped_optimizer=make_mapped_optimizer,
         get_filter_featues=get_filter_featues,
+        hop_size=hop_size,
+        unroll=unroll,
+        inner_iterations=inner_iterations,
+        auto_posterior=auto_posterior,
+    )
+
+    # make the loss batched
+    grad_mapped_loss = jax.vmap(
+        jax.value_and_grad(mapped_loss, has_aux=True), (None, 0, 0, 0, 0, 0, 0, 0, None)
+    )
+
+    @jit
+    def batch_run_outer_loop(
+        meta_opt_s, filter_p, filter_s, preprocess_s, postprocess_s, batch, key
+    ):
+        """Run the outer loop and consumes a fulls et of signals
+
+        Args:
+            meta_opt_s (_type_): Meta-optimizer state
+            filter_p (_type_): Filter parameters
+            filter_s (_type_): Filter state
+            preprocess_s (_type_): Preprocessor state
+            postprocess_s (_type_): Postprocessor state
+            batch (_type_): Batch of data
+            key (_type_): JAX PRNGKey
+
+        Returns:
+            _type_: A tuple with first element being the meta loss, and second element being the filter loss, output, and meta-optimizer state.
+        """
+
+        data_shape = next(iter(batch["signals"].values())).shape
+        batch_size = data_shape[0]
+        n_optimizer_updates = data_shape[1] // (unroll * hop_size)
+
+        # get optimizer params and init in jax format
+        outer_learnable = meta_opt_get_params(meta_opt_s)
+        opt_init, _, _ = make_mapped_optimizer(**outer_learnable)
+        opt_s = jax.vmap(opt_init)(filter_p)
+
+        @jit
+        def run_outer_loop(
+            opt_s, filter_s, preprocess_s, postprocess_s, meta_opt_s, key
+        ):
+            def step_update_outer(state, i):
+                opt_s, filter_s, preprocess_s, postprocess_s, meta_opt_s, key = state
+                outer_learnable = meta_opt_get_params(meta_opt_s)
+
+                batch_signals_unroll = tree_slice_axis(
+                    batch["signals"],
+                    [0, i * unroll * hop_size],
+                    [batch_size, unroll * hop_size],
+                )
+
+                key, *subkeys = jax.random.split(key, 1 + batch_size)
+                aux, meta_grads = grad_mapped_loss(
+                    outer_learnable,
+                    opt_s,
+                    filter_s,
+                    preprocess_s,
+                    postprocess_s,
+                    batch_signals_unroll,
+                    batch["metadata"],
+                    jnp.array(subkeys),
+                    i,
+                )
+
+                cur_meta_loss = aux[0]
+                (
+                    cur_seq_losses,
+                    out,
+                    opt_s,
+                    filter_s,
+                    preprocess_s,
+                    postprocess_s,
+                ) = aux[1]
+
+                # average, conjugate, and gather the meta gradients
+                meta_grads = tree_map(lambda x: jnp.nanmean(x, 0), meta_grads)
+                meta_grads = tree_map(lambda x: jnp.conj(x), meta_grads)
+                meta_grads = jax.lax.pmean(meta_grads, axis_name="devices")
+
+                # pas the gradients to the meta optimizer
+                meta_grads = meta_opt_preprocess(meta_grads)
+                meta_opt_s = meta_opt_update(0, meta_grads, meta_opt_s)
+                state = (
+                    opt_s,
+                    filter_s,
+                    preprocess_s,
+                    postprocess_s,
+                    meta_opt_s,
+                    key,
+                )
+                return state, (cur_meta_loss, cur_seq_losses, out)
+
+            # scan over the optimizer updates
+            init_state = (
+                opt_s,
+                filter_s,
+                preprocess_s,
+                postprocess_s,
+                meta_opt_s,
+                key,
+            )
+            steps = jnp.arange(n_optimizer_updates)
+
+            final_state, (meta_losses, filter_loss, filter_out) = jax.lax.scan(
+                step_update_outer, init_state, steps
+            )
+
+            opt_s, filter_s, preprocess_s, postprocess_s, meta_opt_s, _ = final_state
+            return meta_losses, (filter_loss, filter_out, meta_opt_s)
+
+        return run_outer_loop(
+            opt_s, filter_s, preprocess_s, postprocess_s, meta_opt_s, key
+        )
+
+    return batch_run_outer_loop
+
+
+def make_iterated_online_optimizer(
+    outer_learnable,
+    outer_fixed,
+    make_mapped_optimizer,
+    get_filter_features,
+    inner_iterations,
+    auto_posterior,
+):
+    """Function to make inference/test-time run function for the optimizer
+
+    Args:
+        outer_learnable (_type_): All outer-learned parameters
+        outer_fixed (_type_): All outer-learned kwards
+        make_mapped_optimizer (_type_): Function to make mapped optimizer
+        get_filter_features (_type_): Filter feature extraction function, typically grad
+        inner_iterations (_type_): Number of filter optimizer iterations at a step
+        auto_posterior (_type_, optional): Flag to turn on automatic posterior mode
+    Returns:
+        _type_: online_step and online_state functions
+    """
+    optimizer_args = {**outer_learnable, **outer_fixed["optimizer"]}
+    opt_init, opt_update, get_params = make_mapped_optimizer(**optimizer_args)
+
+    preprocess = outer_fixed["preprocess"]["preprocess"]
+    preprocess_kwargs = outer_fixed["preprocess"]["preprocess_kwargs"]
+
+    postprocess = outer_fixed["postprocess"]["postprocess"]
+    postprocess_kwargs = outer_fixed["postprocess"]["postprocess_kwargs"]
+
+    @jit
+    def online_state(filter_p):
+        """Takes filter parameters and makes optimizer state
+
+        Args:
+            filter_p (_type_): Filter parameters dictionary
+
+        Returns:
+            _type_: Returns optimizer state
+        """
+        return opt_init(filter_p)
+
+    @jit
+    def online_step(state, batch, key):
+        """Takes the state from online_state, a chunk of batch data, and processes it.
+
+        Args:
+            state (_type_): State from online_state
+            batch (_type_): Slice of signals of size hop_size and signal metadata
+            key (_type_): JAX PRNGKey
+
+        Returns:
+            _type_: Returns tuple of loss, ouput signals, and new state.
+        """
+        batch_hop = batch["signals"]
+        batch_metadata = batch["metadata"]
+        filter_s, opt_s, preprocess_s, postprocess_s, i = state
+
+        # run outer trained preprocessing
+        key, subkey = jax.random.split(key)
+        batch_hop, preprocess_s = preprocess.apply(
+            outer_learnable["preprocess_p"],
+            preprocess_s,
+            subkey,
+            data=batch_hop,
+            metadata=batch_metadata,
+            **preprocess_kwargs
+        )
+
+        # the iterated portion
+        out, loss, filter_s, opt_s = inner_inner_loop(
+            auto_posterior,
+            opt_update,
+            opt_s,
+            get_params,
+            get_filter_features,
+            filter_s,
+            batch_hop,
+            batch_metadata,
+            0,
+            0,
+            i,
+            inner_iterations,
+            key,
+        )
+
+        # run outer trained postprocessing
+        key, subkey = jax.random.split(key)
+        out, postprocess_s = postprocess.apply(
+            outer_learnable["postprocess_p"],
+            postprocess_s,
+            subkey,
+            data=batch_hop,
+            metadata=batch_metadata,
+            out=out,
+            **postprocess_kwargs
+        )
+
+        return out, loss, (filter_s, opt_s, preprocess_s, postprocess_s, i + 1)
+
+    return online_step, online_state
+
+
+def make_iterated_fit_single(
+    outer_learnable,
+    outer_fixed,
+    infer_meta_loss,
+    make_mapped_optimizer,
+    get_filter_features,
+    hop_size,
+    inner_iterations,
+    auto_posterior,
+):
+    """Makes a function that can fit and process a full signal.
+
+    Args:
+        outer_learnable (_type_): All outer-learned parameters
+        outer_fixed (_type_): All outer-learned kwargs
+        infer_meta_loss (_type_): The inference time meta-loss -- not vectorized
+        make_mapped_optimizer (_type_): Function to make mapped optimizer
+        get_filter_featues (_type_): Filter feature extraction function, typically grad
+        hop_size (_type_): Filter hop size in samples
+        auto_posterior (_type_, optional): Flag to turn on automatic posterior mode
+    Returns:
+        _type_: Return a function with signature below
+    """
+    online_step, online_state = make_iterated_online_optimizer(
+        outer_learnable=outer_learnable,
+        outer_fixed=outer_fixed,
+        make_mapped_optimizer=make_mapped_optimizer,
+        get_filter_features=get_filter_features,
+        inner_iterations=inner_iterations,
+        auto_posterior=auto_posterior,
     )
 
     batch_step = jax.vmap(online_step, (0, 0, 0))

@@ -1,5 +1,6 @@
 AEC_DATA_DIR = "/home/jonahmc2/data/AEC/new_AEC-Challenge/"
-RES_DATA_DIR = "/mnt/data/junkai2/"
+RES_DATA_DIR = "/home/jonahmc2/data/junkai2/"
+KWS_DATA_DIR = "/home/jonahmc2/data/AEC/speech_commands_v0.02"
 RIR_DATA_DIR = "/home/jonahmc2/data/AEC/RIRS_NOISES/"
 EQ_DATA_DIR = "/home/jonahmc2/data/daps/"
 REVERB_DATA_DIR = "/home/jonahmc2/data/LDC_mod/REVERB_DATA_OFFICIAL"
